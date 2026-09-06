@@ -79,3 +79,11 @@ export async function removeEmployeeFace(employeeId: number, faceId: string) {
   });
   if (error) await throwFunctionError(error);
 }
+
+export async function resetDeviceFaceData() {
+  const client = requireFaceService();
+  const { error } = await client.functions.invoke("face-recognition", {
+    body: { action: "resetDevice" },
+  });
+  if (error) await throwFunctionError(error);
+}

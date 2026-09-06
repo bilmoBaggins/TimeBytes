@@ -26,12 +26,13 @@ import {
   addEmployee,
   updateHourlyRate,
   deleteEmployee,
+  resetEmployeesAndShifts,
 } from "../database/employees";
 import React from "react";
 import FaceEnrollmentModal from "../components/FaceEnrollmentModal";
 import { updateEmployeeFaceId } from "../database/employees";
-import { addAdminFace, AdminFace, deleteAdminFace, getAdminFaces, setAdminFaceId, updateAdminFace } from "../database/adminFaces";
-import { removeAdminFace, removeEmployeeFace } from "../cloud/faceRecognition";
+import { addAdminFace, AdminFace, deleteAdminFace, getAdminFaces, resetAdminFaces, setAdminFaceId, updateAdminFace } from "../database/adminFaces";
+import { removeAdminFace, removeEmployeeFace, resetDeviceFaceData } from "../cloud/faceRecognition";
 import { syncLocalDatabase } from "../cloud/sync";
 import AdminFaceEnrollmentModal from "../components/AdminFaceEnrollmentModal";
 import AdminFaceRecognitionModal from "../components/AdminFaceRecognitionModal";
@@ -330,6 +331,38 @@ export default function AdminScreen() {
     ]);
   }
 
+  function resetTabletData() {
+    Alert.alert(
+      "Reset tablet data",
+      "This permanently removes all employees, shifts, administrator faces, and enrolled AWS face records from this tablet. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset Everything",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await resetDeviceFaceData();
+              await resetEmployeesAndShifts();
+              await resetAdminFaces();
+              setEmployees([]);
+              setTodayShifts([]);
+              setMonthlyData([]);
+              setAdminFaces([]);
+              setUnlocked(false);
+              await prepareAdminAccess();
+            } catch (error: any) {
+              Alert.alert("Reset failed", error.message || "Could not reset this tablet. Please try again with an internet connection.");
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
   if (!unlocked) {
     return (
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
@@ -550,6 +583,12 @@ export default function AdminScreen() {
               </View>
             </View>
           ))}
+          <Pressable
+            style={({ pressed }) => [styles.resetButton, pressed && styles.btnPressed]}
+            onPress={resetTabletData}
+          >
+            <Text style={styles.resetButtonText}>Reset Tablet Data</Text>
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -937,6 +976,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
+  resetButton: {
+    backgroundColor: "#C62828",
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+    marginTop: 18,
+  },
+  resetButtonText: { color: "white", fontSize: 15, fontWeight: "700" },
   exportButton: {
     backgroundColor: "#069B18",
     paddingHorizontal: 12,

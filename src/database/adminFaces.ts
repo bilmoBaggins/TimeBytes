@@ -38,3 +38,8 @@ export async function deleteAdminFace(id: number): Promise<void> {
   await db.runAsync("DELETE FROM admin_faces WHERE id = ?", [id]);
   requestBackgroundSync();
 }
+
+export async function resetAdminFaces(): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync("DELETE FROM admin_faces");
+}

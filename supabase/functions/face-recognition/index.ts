@@ -173,6 +173,32 @@ Deno.serve(async (request) => {
       return json({ success: true });
     }
 
+    if (body.action === "resetDevice") {
+      const [{ data: employees, error: employeeError }, { data: admins, error: adminError }] = await Promise.all([
+        userClient.from("device_employees").select("face_id").eq("user_id", userData.user.id),
+        userClient.from("device_admin_faces").select("face_id").eq("user_id", userData.user.id),
+      ]);
+      if (employeeError) throw employeeError;
+      if (adminError) throw adminError;
+
+      const faceIds = [...(employees ?? []), ...(admins ?? [])]
+        .map((record) => record.face_id)
+        .filter((faceId): faceId is string => Boolean(faceId));
+      if (faceIds.length) {
+        await rekognition.send(new DeleteFacesCommand({ CollectionId: collectionId, FaceIds: faceIds }));
+      }
+
+      const [{ error: shiftError }, { error: employeeDeleteError }, { error: adminDeleteError }] = await Promise.all([
+        userClient.from("device_shifts").delete().eq("user_id", userData.user.id),
+        userClient.from("device_employees").delete().eq("user_id", userData.user.id),
+        userClient.from("device_admin_faces").delete().eq("user_id", userData.user.id),
+      ]);
+      if (shiftError) throw shiftError;
+      if (employeeDeleteError) throw employeeDeleteError;
+      if (adminDeleteError) throw adminDeleteError;
+      return json({ success: true });
+    }
+
     return json({ error: "Unsupported action" }, 400);
   } catch (error) {
     console.error(error);

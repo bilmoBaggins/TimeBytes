@@ -4,13 +4,18 @@ A tablet/mobile app for TimeBytes employees to clock in/out with face recognitio
 
 ## Tech Stack
 
-- **Expo 57** — React Native framework
-- **React 19.2 + React Native 0.86** — UI and mobile runtime
-- **React Navigation 6.x** — Bottom tab navigation
-- **TypeScript 6.0** — Type safety
-- **expo-sqlite** — Local, offline SQLite database
-- **expo-haptics** — Vibration feedback for clock actions
-- **Expo Go** — Mobile testing environment (see "Deploying to a Tablet" for standalone installs)
+- **Expo SDK 57** — React Native framework, native module configuration, and development tooling
+- **React 19.2 + React Native 0.86** — Mobile user interface and runtime
+- **TypeScript 6.0** — Type-safe application code
+- **React Navigation 6** — Clock and Payroll tab navigation
+- **Expo Camera** — Front-camera capture for employee and administrator face enrollment and recognition
+- **Expo SQLite** — Local tablet storage for employees, shifts, and administrator face records
+- **Expo Haptics** — Clock action feedback
+- **Expo FileSystem + Expo Sharing** — CSV payroll report creation and sharing
+- **Supabase** — Anonymous device authentication and cloud synchronization
+- **Supabase Edge Functions** — Server-side face enrollment, recognition, and deletion requests
+- **AWS Rekognition** — Managed face indexing, matching, and deletion
+- **Expo EAS Build** — Signed Android APK builds for tablet installation
 
 ## Features
 
@@ -105,7 +110,7 @@ eas build:configure
 eas build --platform android --profile preview
 ```
 
-This builds an installable `.apk` in the cloud (no local Android SDK needed). Transfer it to the tablet and install it directly — no dev server or same-network requirement. Clocking remains functional offline; optional cloud backup syncs when internet is available.
+This builds an installable `.apk` in the cloud (no local Android SDK needed). Transfer it to the tablet and install it directly — no dev server or same-network requirement. The tablet needs internet access for face enrollment, recognition, and face removal.
 
 Alternatively, with Android Studio installed locally:
 ```bash

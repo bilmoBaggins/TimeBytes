@@ -6,23 +6,7 @@ const HOURLY_RATE = 12.0; // £12 per hour
 type EmployeeRow = Omit<Employee, "isClockedIn"> & { isClockedIn: number };
 
 export async function initializeEmployees() {
-  const db = getDatabase();
-  const employees = ["Bilal", "Juweria", "Yusuf"];
-
-  for (const name of employees) {
-    try {
-      await db.runAsync(
-        "INSERT INTO employees (name, hourly_rate) VALUES (?, ?)",
-        [name, HOURLY_RATE]
-      );
-    } catch (error: any) {
-      if (!error.message.includes("UNIQUE constraint failed")) {
-        throw error;
-      }
-      // Employee already exists, skip
-    }
-  }
-
+  // Employees are created by an administrator during setup.
 }
 
 export async function getEmployees(): Promise<Employee[]> {
@@ -80,4 +64,9 @@ export async function deleteEmployee(employeeId: number) {
   }
   await db.runAsync("DELETE FROM employees WHERE id = ?", [employeeId]);
   requestBackgroundSync();
+}
+
+export async function resetEmployeesAndShifts(): Promise<void> {
+  const db = getDatabase();
+  await db.execAsync("DELETE FROM shifts; DELETE FROM employees;");
 }
