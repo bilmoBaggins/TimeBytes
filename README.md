@@ -1,6 +1,6 @@
-# Biryani Bytes Clock-In/Out System
+# TimeBytes Clock-In/Out System
 
-A tablet/mobile app for Biryani Bytes employees to clock in/out with a PIN, and for admins to manage employees, PINs, and payroll.
+A tablet/mobile app for TimeBytes employees to clock in/out with face recognition and for administrators to manage employees and payroll.
 
 ## Tech Stack
 
@@ -9,21 +9,21 @@ A tablet/mobile app for Biryani Bytes employees to clock in/out with a PIN, and 
 - **React Navigation 6.x** — Bottom tab navigation
 - **TypeScript 6.0** — Type safety
 - **expo-sqlite** — Local, offline SQLite database
-- **expo-haptics** — Vibration feedback on PIN entry
+- **expo-haptics** — Vibration feedback for clock actions
 - **Expo Go** — Mobile testing environment (see "Deploying to a Tablet" for standalone installs)
 
 ## Features
 
-- **Tile-based Clock In/Out** — Employees tap their name tile (colored green when clocked in, white when clocked out) and enter their 4-digit code to toggle status. Wrong codes shake and vibrate; correct codes auto-submit with no extra buttons.
-- **PIN-protected Payroll tab** — The Payroll/Admin tab is locked behind a 4-digit admin PIN, entered the same way (auto-submit, shake on error).
-- **Employee Management** — Add employees (auto-generates a unique 4-digit code), edit hourly rate and PIN code, or delete employees.
+- **Face Clock In/Out** — Employees tap their name tile and scan their enrolled face to toggle status.
+- **Face-protected Payroll tab** — The Payroll/Admin tab is unlocked only by an enrolled administrator face.
+- **Employee Management** — Add employees, edit hourly rates, enroll or remove faces, and delete employees.
 - **Compact Employee Actions** — Edit, view history, and delete actions use accessible icons to keep employee rows uncluttered.
-- **Editable PINs** — Both employee codes and the admin PIN are stored in the database and changeable at any time from the Payroll tab — no rebuild required.
+- **Administrator Management** — Add, rename, and remove multiple administrator faces from Security.
 - **Payroll Dashboard** — Completed shifts (today) and monthly payroll totals per employee, plus an overall summary.
 - **Pull-to-refresh** — Swipe down on either tab to reload data instead of a manual refresh button.
-- **Tap-outside-to-close pop-ups** — All modals (PIN entry, add/edit employee, change admin PIN) close when tapping outside the card.
-- **Local Database** — SQLite with employees, shifts, and settings tables; clocking works offline.
-- **Cloud Backup** — Optional one-tablet Supabase backup; local clocking continues when offline and uploads retry on the next app start or refresh.
+- **Tap-outside-to-close pop-ups** — Forms and history pop-ups close when tapping outside the card.
+- **Local Database** — SQLite stores employees, shifts, and administrator faces on the tablet.
+- **Cloud Backup** — Supabase keeps a one-tablet backup of employee, shift, and administrator records.
 
 ## Project Structure
 
@@ -31,12 +31,12 @@ A tablet/mobile app for Biryani Bytes employees to clock in/out with a PIN, and 
 src/
   database/
     database.ts      — SQLite setup, table creation & migrations
-    employees.ts      — Employee CRUD, PIN code generation/validation
+    employees.ts      — Employee CRUD and face enrollment state
     shifts.ts         — Clock in/out logic & shift calculations
-    settings.ts       — Admin PIN storage
+    adminFaces.ts     — Administrator face management
   screens/
-    ClockScreen.tsx   — Employee tile grid + PIN modal
-    AdminScreen.tsx   — PIN-gated payroll dashboard & employee management
+    ClockScreen.tsx   — Employee tile grid + face scanner
+    AdminScreen.tsx   — Face-gated payroll dashboard & employee management
   types/
     index.ts          — TypeScript interfaces
   utils/
@@ -54,7 +54,7 @@ index.ts              — Entry point
 - `id` (INTEGER PRIMARY KEY)
 - `name` (TEXT UNIQUE NOT NULL)
 - `hourly_rate` (REAL, default: £12.00)
-- `code` (TEXT) — unique 4-digit PIN used to clock in/out
+- `face_id` (TEXT, nullable) — AWS Rekognition face identifier
 - `is_clocked_in` (INTEGER, 0/1) — current clock status, source of truth for the tile color
 
 ### shifts
@@ -66,9 +66,10 @@ index.ts              — Entry point
 - `clock_out_time` (TEXT, HH:mm, nullable)
 - `hourly_pay` (REAL, nullable) — calculated once clocked out
 
-### settings
-- `id` (INTEGER PRIMARY KEY, always 1)
-- `admin_pin` (TEXT) — 4-digit PIN to unlock the Payroll tab
+### admin_faces
+- `id` (INTEGER PRIMARY KEY)
+- `name` (TEXT NOT NULL)
+- `face_id` (TEXT, nullable) — AWS Rekognition administrator face identifier
 
 ## Setup & Running
 
@@ -85,7 +86,7 @@ npm install
 npx expo start --port 8081 --lan
 ```
 
-Scan the QR code in Expo Go on your device to load the app. The default admin PIN is `1234` — change it from Payroll → Security → Change Admin PIN.
+Scan the QR code in Expo Go on your device to load the app. Opening Payroll for the first time prompts you to enroll an administrator face.
 
 ### Windows Firewall (one-time setup)
 Windows Firewall blocks inbound connections on the Metro bundler's port by default, which stops the phone/tablet from downloading the app bundle even when on the same Wi-Fi. Run this once in an **administrator** PowerShell terminal:
@@ -124,20 +125,42 @@ Check the Metro Bundler output in the terminal for compilation errors. Use `cons
 
 ### Optional Cloud Backup
 
-Cloud backup uses one anonymous, device-specific Supabase account. The tablet does not need employee cloud accounts. To enable it:
+TimeBytes uses one anonymous, device-specific Supabase account. The tablet does not need employee cloud accounts. Face recognition requires this Supabase connection and internet access.
 
 1. In Supabase, enable **Authentication → Providers → Anonymous Sign-Ins**.
 2. Run `supabase/schema.sql` in the Supabase SQL Editor.
 3. Copy `.env.example` to `.env` and add the project URL and publishable key.
-4. Restart Expo after changing `.env`.
+4. Restart Expo after changing `.env`; for EAS builds, add the same public variables to the selected EAS environment.
 
-The app remains usable without Supabase or internet access. Cloud backup is uploaded in the background after local changes and retried at startup.
+The database remains on the tablet, but face enrollment, recognition, and face removal require the cloud service.
+
+### Face Recognition Setup
+
+Face recognition uses the tablet camera plus an AWS Rekognition collection through a Supabase Edge Function. AWS credentials are kept in Supabase; never add them to `.env` or the Expo app.
+
+1. For a new Supabase project, run `supabase/schema.sql` in the SQL Editor. For an existing linked project, apply the migrations instead:
+  ```bash
+  npx supabase db push
+  ```
+2. Create an AWS Rekognition collection in the same region used by the function:
+  ```bash
+  aws rekognition create-collection --collection-id biryani-bytes-employees --region eu-west-2
+  ```
+3. Give the function's AWS user permission for `rekognition:IndexFaces`, `rekognition:SearchFacesByImage`, and `rekognition:DeleteFaces`.
+4. From the project root, configure and deploy the function. Use your Supabase project URL and publishable key for `PROJECT_URL` and `PROJECT_ANON_KEY`:
+  ```bash
+  npx supabase secrets set PROJECT_URL=https://your-project-ref.supabase.co PROJECT_ANON_KEY=your_publishable_key AWS_REGION=eu-west-2 AWS_ACCESS_KEY_ID=your_access_key AWS_SECRET_ACCESS_KEY=your_secret_key AWS_REKOGNITION_COLLECTION_ID=biryani-bytes-employees
+  npx supabase functions deploy face-recognition
+  ```
+5. Open Payroll after installation to create and enroll the first administrator face. In Security, add, rename, or remove additional administrator faces. Use the gray face button beside an employee to enroll a face; it turns red when it can remove that face.
+
+Face scanning requires internet access and employee consent. Clocking and Payroll access are unavailable when face recognition cannot be reached.
 
 ## Known Issues & TODO
 
 - [x] Shift history view per employee
 - [x] Export payroll reports (CSV)
-- [x] Custom Biryani Bytes app icon, loading logo, and web favicon
+- [x] Custom TimeBytes app icon, loading logo, and web favicon
 - [ ] iOS testing (developed/tested primarily on Android)
 - [x] Optional one-tablet database backup/cloud sync
 

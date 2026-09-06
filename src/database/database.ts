@@ -14,19 +14,9 @@ export async function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT UNIQUE NOT NULL,
         hourly_rate REAL DEFAULT 12.0,
-        code TEXT,
         is_clocked_in INTEGER DEFAULT 0
       );
     `);
-
-    // Migration: add code column for databases created before PIN codes existed
-    try {
-      await db.execAsync(`ALTER TABLE employees ADD COLUMN code TEXT;`);
-    } catch (error: any) {
-      if (!error.message?.includes("duplicate column")) {
-        throw error;
-      }
-    }
 
     // Migration: add is_clocked_in column for databases created before status tracking existed
     try {
@@ -36,6 +26,25 @@ export async function initializeDatabase() {
         throw error;
       }
     }
+
+    // Migration: store the cloud recognition face identifier when enrolled
+    try {
+      await db.execAsync(`ALTER TABLE employees ADD COLUMN face_id TEXT;`);
+    } catch (error: any) {
+      if (!error.message?.includes("duplicate column")) {
+        throw error;
+      }
+    }
+
+    try {
+      await db.execAsync(`ALTER TABLE employees DROP COLUMN code;`);
+    } catch (error: any) {
+      if (!error.message?.includes("no such column")) {
+        throw error;
+      }
+    }
+
+    await db.execAsync(`DROP TABLE IF EXISTS settings;`);
 
     // Create shifts table
     await db.execAsync(`
@@ -51,16 +60,13 @@ export async function initializeDatabase() {
       );
     `);
 
-    // Create settings table (single row) to hold the admin PIN
     await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS settings (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        admin_pin TEXT NOT NULL DEFAULT '1234'
+      CREATE TABLE IF NOT EXISTS admin_faces (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        face_id TEXT
       );
     `);
-    await db.runAsync(
-      `INSERT OR IGNORE INTO settings (id, admin_pin) VALUES (1, '1234')`
-    );
 
     console.log("Database initialized successfully");
     return db;

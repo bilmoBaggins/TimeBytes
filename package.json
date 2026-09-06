@@ -1,5 +1,5 @@
 {
-  "name": "bbytes",
+  "name": "timebytes",
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
@@ -8,6 +8,7 @@
     "@react-navigation/native": "^6.1.18",
     "@supabase/supabase-js": "^2.115.0",
     "expo": "^57.0.0",
+    "expo-camera": "~57.0.4",
     "expo-file-system": "~57.0.6",
     "expo-haptics": "~57.0.2",
     "expo-sharing": "~57.0.18",
@@ -22,7 +23,6 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.4",
-    "@types/react-navigation": "^3.0.8",
     "typescript": "~6.0.3"
   },
   "scripts": {

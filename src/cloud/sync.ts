@@ -23,13 +23,13 @@ export async function syncLocalDatabase(): Promise<void> {
 
     const db = getDatabase();
     const employees = await db.getAllAsync<any>(
-      "SELECT id, name, hourly_rate as hourlyRate, code, is_clocked_in as isClockedIn FROM employees"
+      "SELECT id, name, hourly_rate as hourlyRate, face_id as faceId, is_clocked_in as isClockedIn FROM employees"
     );
     const shifts = await db.getAllAsync<any>(
       "SELECT id, employee_id as employeeId, employee_name as employeeName, date, clock_in_time as clockInTime, clock_out_time as clockOutTime, hourly_pay as hourlyPay FROM shifts"
     );
-    const setting = await db.getFirstAsync<{ admin_pin: string }>(
-      "SELECT admin_pin FROM settings WHERE id = 1"
+    const adminFaces = await db.getAllAsync<any>(
+      "SELECT id, name, face_id as faceId FROM admin_faces"
     );
 
     const employeeRows = employees.map((employee) => ({
@@ -37,7 +37,7 @@ export async function syncLocalDatabase(): Promise<void> {
       local_id: employee.id,
       name: employee.name,
       hourly_rate: employee.hourlyRate,
-      code: employee.code,
+      face_id: employee.faceId,
       is_clocked_in: Boolean(employee.isClockedIn),
     }));
     const shiftRows = shifts.map((shift) => ({
@@ -50,6 +50,12 @@ export async function syncLocalDatabase(): Promise<void> {
       clock_out_time: shift.clockOutTime,
       hourly_pay: shift.hourlyPay,
     }));
+    const adminFaceRows = adminFaces.map((adminFace) => ({
+      user_id: userId,
+      local_id: adminFace.id,
+      name: adminFace.name,
+      face_id: adminFace.faceId,
+    }));
 
     if (employeeRows.length) {
       const { error } = await supabase.from("device_employees").upsert(employeeRows);
@@ -59,11 +65,8 @@ export async function syncLocalDatabase(): Promise<void> {
       const { error } = await supabase.from("device_shifts").upsert(shiftRows);
       if (error) throw error;
     }
-    if (setting) {
-      const { error } = await supabase.from("device_settings").upsert({
-        user_id: userId,
-        admin_pin: setting.admin_pin,
-      });
+    if (adminFaceRows.length) {
+      const { error } = await supabase.from("device_admin_faces").upsert(adminFaceRows);
       if (error) throw error;
     }
   } finally {

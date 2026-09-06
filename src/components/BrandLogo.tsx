@@ -7,10 +7,10 @@ type BrandLogoProps = {
 export default function BrandLogo({ width = 270 }: BrandLogoProps) {
   return (
     <Image
-      source={require("../../assets/biryani-bytes-logo.jpeg")}
+      source={require("../../assets/timebytes-app-icon.png")}
       style={{ width, height: width }}
       resizeMode="contain"
-      accessibilityLabel="Biryani Bytes logo"
+      accessibilityLabel="TimeBytes logo"
     />
   );
 }

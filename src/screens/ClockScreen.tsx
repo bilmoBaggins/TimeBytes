@@ -1,14 +1,11 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
   Alert,
-  Modal,
-  TextInput,
   ActivityIndicator,
-  Animated,
   ScrollView,
   RefreshControl,
 } from "react-native";
@@ -18,6 +15,9 @@ import * as Haptics from "expo-haptics";
 import { getEmployees } from "../database/employees";
 import { clockInOut, getCurrentStatus } from "../database/shifts";
 import { Employee } from "../types";
+import FaceRecognitionModal from "../components/FaceRecognitionModal";
+import FaceEnrollmentModal from "../components/FaceEnrollmentModal";
+import { updateEmployeeFaceId } from "../database/employees";
 
 type Status = "clockedIn" | "clockedOut" | "notWorking";
 
@@ -36,39 +36,26 @@ export default function ClockScreen() {
   const [loadingList, setLoadingList] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [processing, setProcessing] = useState(false);
-
+  const [faceModalVisible, setFaceModalVisible] = useState(false);
   const [activeEmployee, setActiveEmployee] = useState<Employee | null>(null);
-  const [pinInput, setPinInput] = useState("");
-  const [isError, setIsError] = useState(false);
-  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const [enrollmentEmployee, setEnrollmentEmployee] = useState<Employee | null>(null);
 
   useFocusEffect(
     useCallback(() => {
-      loadEmployeesAndStatuses();
+      void loadEmployeesAndStatuses();
     }, [])
   );
-
-  useEffect(() => {
-    if (activeEmployee && pinInput.length === 4) {
-      if (pinInput === activeEmployee.code) {
-        submitClockInOut(activeEmployee);
-      } else {
-        triggerError();
-      }
-    }
-  }, [pinInput]);
 
   async function loadEmployeesAndStatuses() {
     setLoadingList(true);
     try {
-      const empList = await getEmployees();
-      setEmployees(empList);
-
+      const employeeList = await getEmployees();
+      setEmployees(employeeList);
       const entries = await Promise.all(
-        empList.map(async (emp) => {
-          const status = await getCurrentStatus(emp.name);
-          return [emp.name, status] as const;
-        })
+        employeeList.map(async (employee) => [
+          employee.name,
+          await getCurrentStatus(employee.name),
+        ] as const)
       );
       setStatuses(Object.fromEntries(entries));
     } catch (error) {
@@ -84,41 +71,25 @@ export default function ClockScreen() {
     setRefreshing(false);
   }
 
-  function openPinModal(emp: Employee) {
-    setActiveEmployee(emp);
-    setPinInput("");
-    setIsError(false);
-    shakeAnim.setValue(0);
+  function openFaceModal(employee: Employee) {
+    if (!employee.faceId) {
+      Alert.alert("Face not enrolled", `${employee.name} does not have a face connected yet. Add one now?`, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Add Face", onPress: () => setEnrollmentEmployee(employee) },
+      ]);
+      return;
+    }
+    setActiveEmployee(employee);
+    setFaceModalVisible(true);
   }
 
-  function closePinModal() {
-    if (processing) return;
-    setActiveEmployee(null);
-    setPinInput("");
-    setIsError(false);
-  }
-
-  function triggerError() {
-    setIsError(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-    Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-    ]).start(() => {
-      setIsError(false);
-      setPinInput("");
-    });
-  }
-
-  async function submitClockInOut(emp: Employee) {
+  async function submitClockInOut(employee: Employee) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setProcessing(true);
     try {
-      const result = await clockInOut(emp.name);
+      const result = await clockInOut(employee.name);
       setActiveEmployee(null);
-      setPinInput("");
+      setFaceModalVisible(false);
       Alert.alert("Success", result.message);
       await loadEmployeesAndStatuses();
     } catch (error: any) {
@@ -126,6 +97,23 @@ export default function ClockScreen() {
     } finally {
       setProcessing(false);
     }
+  }
+
+  async function handleFaceRecognized(employeeId: number) {
+    const employee = employees.find((item) => item.id === employeeId);
+    if (!employee) throw new Error("That employee is not available on this tablet.");
+    if (!activeEmployee || employee.id !== activeEmployee.id) {
+      throw new Error("This face does not match the selected employee.");
+    }
+    await submitClockInOut(employee);
+  }
+
+  async function handleFaceEnrolled(faceId: string) {
+    if (!enrollmentEmployee) return;
+    await updateEmployeeFaceId(enrollmentEmployee.id, faceId);
+    setEnrollmentEmployee(null);
+    await loadEmployeesAndStatuses();
+    Alert.alert("Face added", `${enrollmentEmployee.name}'s face is ready for clock-in.`);
   }
 
   return (
@@ -137,7 +125,7 @@ export default function ClockScreen() {
         }
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Biryani Bytes</Text>
+          <Text style={styles.title}>TimeBytes</Text>
           <Text style={styles.subtitle}>Tap your name to clock in or out</Text>
         </View>
 
@@ -158,7 +146,7 @@ export default function ClockScreen() {
                     isClockedIn ? styles.tileClockedIn : styles.tileClockedOut,
                     pressed && styles.tilePressed,
                   ]}
-                  onPress={() => openPinModal(emp)}
+                  onPress={() => openFaceModal(emp)}
                 >
                   <View
                     style={[
@@ -184,35 +172,19 @@ export default function ClockScreen() {
         )}
       </ScrollView>
 
-      <Modal
-        visible={activeEmployee !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={closePinModal}
-      >
-        <Pressable style={styles.modalOverlay} onPress={closePinModal}>
-          <Pressable style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle}>{activeEmployee?.name}</Text>
-            <Text style={styles.modalSubtitle}>
-              {processing ? "Processing..." : "Enter your 4-digit code"}
-            </Text>
-
-            <Animated.View style={{ transform: [{ translateX: shakeAnim }], width: "100%" }}>
-              <TextInput
-                style={[styles.pinInput, isError && styles.pinInputError]}
-                value={pinInput}
-                onChangeText={(text) => setPinInput(text.replace(/[^0-9]/g, "").slice(0, 4))}
-                keyboardType="number-pad"
-                maxLength={4}
-                autoFocus
-                placeholder="----"
-                placeholderTextColor="#D9C9BC"
-                editable={!processing}
-              />
-            </Animated.View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <FaceRecognitionModal
+        visible={faceModalVisible}
+        onClose={() => {
+          setFaceModalVisible(false);
+          setActiveEmployee(null);
+        }}
+        onRecognized={handleFaceRecognized}
+      />
+      <FaceEnrollmentModal
+        employee={enrollmentEmployee}
+        onClose={() => setEnrollmentEmployee(null)}
+        onEnrolled={handleFaceEnrolled}
+      />
     </SafeAreaView>
   );
 }
@@ -252,6 +224,17 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: "#8A7A70",
     fontWeight: "500",
+  },
+  faceButton: {
+    backgroundColor: "#069B18",
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    marginTop: 14,
+  },
+  faceButtonText: {
+    color: "white",
+    fontWeight: "800",
   },
   noData: {
     fontSize: 14,
@@ -320,52 +303,5 @@ const styles = StyleSheet.create({
   },
   statusClockedOut: {
     color: "#8A7A70",
-  },
-
-  // PIN modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(30, 20, 15, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  modalCard: {
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 24,
-    width: "100%",
-    alignItems: "center",
-    maxWidth: 340,
-    ...shadow,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#B85F00",
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: "#8A7A70",
-    marginTop: 6,
-    marginBottom: 20,
-  },
-  pinInput: {
-    backgroundColor: "#F7F1EC",
-    borderWidth: 1.5,
-    borderColor: "#EEE3DA",
-    borderRadius: 12,
-    paddingVertical: 14,
-    width: "100%",
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-    letterSpacing: 12,
-    color: "#3A2A22",
-  },
-  pinInputError: {
-    borderColor: "#B85F00",
-    backgroundColor: "#FDECEA",
-    color: "#B85F00",
   },
 });

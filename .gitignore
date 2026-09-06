@@ -1,6 +1,8 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 .env
+credentials.json
+*.log
 
 # dependencies
 node_modules/
@@ -8,6 +10,7 @@ node_modules/
 # Expo
 .expo/
 .expo
+supabase/.temp/
 dist/
 web-build/
 expo-env.d.ts

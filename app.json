@@ -1,26 +1,42 @@
 {
   "expo": {
-    "name": "Biryani Bytes",
+    "name": "TimeBytes",
     "slug": "BBytes",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/biryani-bytes-logo.jpeg",
+    "icon": "./assets/timebytes-app-icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FBF3EC",
     "ios": {
       "supportsTablet": true
     },
     "android": {
-      "icon": "./assets/biryani-bytes-logo.jpeg",
-      "predictiveBackGestureEnabled": false
+      "icon": "./assets/timebytes-app-icon.png",
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "package": "com.bilalm9steam.TimeBytes"
     },
     "web": {
-      "favicon": "./assets/biryani-bytes-logo.jpeg"
+      "favicon": "./assets/timebytes-app-icon.png"
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow TimeBytes to use the camera for employee recognition",
+          "recordAudioAndroid": false
+        }
+      ],
       "expo-sharing",
       "expo-sqlite",
       "expo-status-bar"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f912ab9f-667e-4640-a7c0-df1921b1856b"
+      }
+    }
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   TextInput,
   Modal,
   Alert,
-  Animated,
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -21,24 +20,31 @@ import { getShiftsByEmployee, getTodayShifts } from "../database/shifts";
 import { Shift, Employee } from "../types";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-import { Clock3, Pencil, Trash2 } from "lucide-react-native";
+import { Clock3, Pencil, ScanFace, Trash2 } from "lucide-react-native";
 import {
   getEmployees,
   addEmployee,
   updateHourlyRate,
-  updateEmployeeCode,
   deleteEmployee,
 } from "../database/employees";
-import { getAdminPin, setAdminPin } from "../database/settings";
 import React from "react";
+import FaceEnrollmentModal from "../components/FaceEnrollmentModal";
+import { updateEmployeeFaceId } from "../database/employees";
+import { addAdminFace, AdminFace, deleteAdminFace, getAdminFaces, setAdminFaceId, updateAdminFace } from "../database/adminFaces";
+import { removeAdminFace, removeEmployeeFace } from "../cloud/faceRecognition";
+import { syncLocalDatabase } from "../cloud/sync";
+import AdminFaceEnrollmentModal from "../components/AdminFaceEnrollmentModal";
+import AdminFaceRecognitionModal from "../components/AdminFaceRecognitionModal";
 
 export default function AdminScreen() {
   const navigation = useNavigation();
   const [unlocked, setUnlocked] = useState(false);
-  const [adminPinInput, setAdminPinInput] = useState("");
-  const [pinError, setPinError] = useState(false);
-  const [storedAdminPin, setStoredAdminPin] = useState("1234");
-  const pinShakeAnim = useRef(new Animated.Value(0)).current;
+  const [adminFaces, setAdminFaces] = useState<AdminFace[]>([]);
+  const [adminScannerVisible, setAdminScannerVisible] = useState(false);
+  const [adminEnrollment, setAdminEnrollment] = useState<AdminFace | null>(null);
+  const [showAdminNameModal, setShowAdminNameModal] = useState(false);
+  const [adminName, setAdminName] = useState("");
+  const [editingAdmin, setEditingAdmin] = useState<AdminFace | null>(null);
 
   const [monthlyData, setMonthlyData] = useState<MonthlyPayroll[]>([]);
   const [todayShifts, setTodayShifts] = useState<Shift[]>([]);
@@ -49,6 +55,7 @@ export default function AdminScreen() {
   const [historyEmployee, setHistoryEmployee] = useState<Employee | null>(null);
   const [historyShifts, setHistoryShifts] = useState<Shift[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [faceEmployee, setFaceEmployee] = useState<Employee | null>(null);
 
   // Add employee modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -59,55 +66,37 @@ export default function AdminScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editRate, setEditRate] = useState("");
-  const [editCode, setEditCode] = useState("");
-
-  // Change admin PIN modal
-  const [showChangePinModal, setShowChangePinModal] = useState(false);
-  const [newAdminPin, setNewAdminPin] = useState("");
-  const [confirmAdminPin, setConfirmAdminPin] = useState("");
-
-  useEffect(() => {
-    getAdminPin().then(setStoredAdminPin);
-  }, []);
 
   useFocusEffect(
     React.useCallback(() => {
-      if (unlocked) {
-        loadData();
-      }
+      void prepareAdminAccess();
     }, [unlocked])
   );
 
   useEffect(() => {
     const unsubscribe = navigation.addListener("blur", () => {
       setUnlocked(false);
-      setAdminPinInput("");
-      setPinError(false);
+      setAdminScannerVisible(false);
     });
     return unsubscribe;
   }, [navigation]);
 
-  useEffect(() => {
-    if (adminPinInput.length === 4) {
-      if (adminPinInput === storedAdminPin) {
-        setAdminPinInput("");
-        setUnlocked(true);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } else {
-        setPinError(true);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        Animated.sequence([
-          Animated.timing(pinShakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-          Animated.timing(pinShakeAnim, { toValue: -10, duration: 50, useNativeDriver: true }),
-          Animated.timing(pinShakeAnim, { toValue: 10, duration: 50, useNativeDriver: true }),
-          Animated.timing(pinShakeAnim, { toValue: 0, duration: 50, useNativeDriver: true }),
-        ]).start(() => {
-          setPinError(false);
-          setAdminPinInput("");
-        });
-      }
+  async function prepareAdminAccess() {
+    const faces = await getAdminFaces();
+    setAdminFaces(faces);
+    const unenrolledAdmin = faces.find((admin) => !admin.faceId);
+    if (unenrolledAdmin) {
+      setAdminEnrollment(unenrolledAdmin);
+    } else if (faces.length === 0) {
+      const firstAdmin = await addAdminFace("Administrator");
+      setAdminFaces([firstAdmin]);
+      setAdminEnrollment(firstAdmin);
+    } else if (unlocked) {
+      await loadData();
+    } else {
+      setAdminScannerVisible(true);
     }
-  }, [adminPinInput]);
+  }
 
   async function loadData() {
     setLoading(true);
@@ -146,12 +135,12 @@ export default function AdminScreen() {
     try {
       const rate = parseFloat(newEmployeeRate) || 12;
       const name = newEmployeeName.trim();
-      const code = await addEmployee(name, rate);
+      await addEmployee(name, rate);
       setNewEmployeeName("");
       setNewEmployeeRate("12");
       setShowAddModal(false);
       await loadData();
-      Alert.alert("Success", `${name} added successfully.\nTheir clock-in code is ${code}.`);
+      Alert.alert("Success", `${name} added successfully.`);
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to add employee");
     }
@@ -160,47 +149,16 @@ export default function AdminScreen() {
   async function handleEditEmployee() {
     if (!editingEmployee) return;
 
-    if (editCode.length !== 4) {
-      Alert.alert("Error", "Code must be exactly 4 digits");
-      return;
-    }
-
     try {
       const rate = parseFloat(editRate) || 12;
       await updateHourlyRate(editingEmployee.id, rate);
-      if (editCode !== editingEmployee.code) {
-        await updateEmployeeCode(editingEmployee.id, editCode);
-      }
       setShowEditModal(false);
       setEditingEmployee(null);
       setEditRate("");
-      setEditCode("");
       await loadData();
       Alert.alert("Success", "Employee updated successfully");
     } catch (error: any) {
       Alert.alert("Error", error.message || "Failed to update employee");
-    }
-  }
-
-  async function handleChangeAdminPin() {
-    if (newAdminPin.length !== 4) {
-      Alert.alert("Error", "PIN must be exactly 4 digits");
-      return;
-    }
-    if (newAdminPin !== confirmAdminPin) {
-      Alert.alert("Error", "PINs do not match");
-      return;
-    }
-
-    try {
-      await setAdminPin(newAdminPin);
-      setStoredAdminPin(newAdminPin);
-      setShowChangePinModal(false);
-      setNewAdminPin("");
-      setConfirmAdminPin("");
-      Alert.alert("Success", "Admin PIN updated successfully");
-    } catch (error: any) {
-      Alert.alert("Error", error.message || "Failed to update admin PIN");
     }
   }
 
@@ -291,7 +249,6 @@ export default function AdminScreen() {
   function openEditModal(emp: Employee) {
     setEditingEmployee(emp);
     setEditRate(emp.hourlyRate.toString());
-    setEditCode(emp.code);
     setShowEditModal(true);
   }
 
@@ -301,25 +258,94 @@ export default function AdminScreen() {
     setNewEmployeeRate("12");
   }
 
+  async function handleFaceEnrolled(faceId: string) {
+    if (!faceEmployee) return;
+    await updateEmployeeFaceId(faceEmployee.id, faceId);
+    await loadData();
+    Alert.alert("Success", `${faceEmployee.name}'s face has been enrolled.`);
+  }
+
+  async function handleAdminFaceEnrolled(faceId: string) {
+    if (!adminEnrollment) return;
+    await setAdminFaceId(adminEnrollment.id, faceId);
+    setAdminEnrollment(null);
+    await prepareAdminAccess();
+  }
+
+  async function handleAdminRecognized(adminId: number) {
+    if (!adminFaces.some((admin) => admin.id === adminId && admin.faceId)) {
+      throw new Error("This administrator is not available on this device.");
+    }
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setUnlocked(true);
+    setAdminScannerVisible(false);
+  }
+
+  async function saveAdminName() {
+    const name = adminName.trim();
+    if (!name) return;
+    if (editingAdmin) {
+      await updateAdminFace(editingAdmin.id, name);
+    } else {
+      const admin = await addAdminFace(name);
+      setAdminEnrollment(admin);
+    }
+    setAdminName("");
+    setEditingAdmin(null);
+    setShowAdminNameModal(false);
+    setAdminFaces(await getAdminFaces());
+  }
+
+  function removeAdmin(admin: AdminFace) {
+    Alert.alert("Remove admin face", `Remove ${admin.name}'s admin access?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: async () => {
+        try {
+          if (admin.faceId) await removeAdminFace(admin.id, admin.faceId);
+          await deleteAdminFace(admin.id);
+          setAdminFaces(await getAdminFaces());
+        } catch (error: any) { Alert.alert("Error", error.message || "Could not remove admin face."); }
+      } },
+    ]);
+  }
+
+  function removeEmployeeFaceRecord(employee: Employee) {
+    if (!employee.faceId) return;
+    Alert.alert("Remove employee face", `Remove ${employee.name}'s enrolled face?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await syncLocalDatabase();
+            await removeEmployeeFace(employee.id, employee.faceId!);
+            await updateEmployeeFaceId(employee.id, null);
+            await loadData();
+          } catch (error: any) {
+            Alert.alert("Could not remove face", error.message || "Please check the internet connection and try again.");
+          }
+        },
+      },
+    ]);
+  }
+
   if (!unlocked) {
     return (
       <SafeAreaView style={styles.safeArea} edges={["top", "bottom"]}>
         <View style={styles.lockContainer}>
           <Text style={styles.lockTitle}>Admin Access</Text>
-          <Text style={styles.lockSubtitle}>Enter the admin code to continue</Text>
-
-          <Animated.View style={{ transform: [{ translateX: pinShakeAnim }], width: "100%", maxWidth: 260 }}>
-            <TextInput
-              style={[styles.lockInput, pinError && styles.lockInputError]}
-              value={adminPinInput}
-              onChangeText={(text) => setAdminPinInput(text.replace(/[^0-9]/g, "").slice(0, 4))}
-              keyboardType="number-pad"
-              maxLength={4}
-              autoFocus
-              placeholder="----"
-              placeholderTextColor="#D9C9BC"
-            />
-          </Animated.View>
+          <Text style={styles.lockSubtitle}>Scan an enrolled administrator face to continue.</Text>
+          <Pressable style={styles.faceAccessButton} onPress={() => setAdminScannerVisible(true)}>
+            <ScanFace size={22} color="white" strokeWidth={2.5} />
+            <Text style={styles.faceAccessButtonText}>Scan Admin Face</Text>
+          </Pressable>
+          <AdminFaceRecognitionModal visible={adminScannerVisible} onClose={() => setAdminScannerVisible(false)} onRecognized={handleAdminRecognized} />
+          <AdminFaceEnrollmentModal
+            admin={adminEnrollment}
+            onClose={() => setAdminEnrollment(null)}
+            onEnrolled={handleAdminFaceEnrolled}
+          />
         </View>
       </SafeAreaView>
     );
@@ -357,9 +383,23 @@ export default function AdminScreen() {
               <View key={emp.id} style={styles.employeeCard}>
                 <View style={styles.employeeInfo}>
                   <Text style={styles.empName}>{emp.name}</Text>
-                  <Text style={styles.empRate}>£{emp.hourlyRate}/hr · Code: {emp.code}</Text>
+                  <Text style={styles.empRate}>£{emp.hourlyRate}/hr</Text>
                 </View>
                 <View style={styles.employeeActions}>
+                  <Pressable
+                    style={({ pressed }) => [styles.faceBtn, emp.faceId && styles.faceRemoveBtn, pressed && styles.btnPressed]}
+                    onPress={() => {
+                      if (!emp.faceId) {
+                        setFaceEmployee(emp);
+                        return;
+                      }
+                      removeEmployeeFaceRecord(emp);
+                    }}
+                    accessibilityLabel={emp.faceId ? `Remove face for ${emp.name}` : `Enroll face for ${emp.name}`}
+                    accessibilityRole="button"
+                  >
+                    <ScanFace size={18} color="white" strokeWidth={2.5} />
+                  </Pressable>
                   <Pressable
                     style={({ pressed }) => [styles.editBtn, pressed && styles.btnPressed]}
                     onPress={() => openEditModal(emp)}
@@ -493,10 +533,23 @@ export default function AdminScreen() {
           <Text style={styles.sectionTitle}>Security</Text>
           <Pressable
             style={({ pressed }) => [styles.outlineButton, pressed && styles.outlineButtonPressed]}
-            onPress={() => setShowChangePinModal(true)}
+            onPress={() => {
+              setEditingAdmin(null);
+              setAdminName("");
+              setShowAdminNameModal(true);
+            }}
           >
-            <Text style={styles.outlineButtonText}>Change Admin PIN</Text>
+            <Text style={styles.outlineButtonText}>Add Admin Face</Text>
           </Pressable>
+          {adminFaces.map((admin) => (
+            <View key={admin.id} style={styles.adminRow}>
+              <Text style={styles.adminName}>{admin.name}</Text>
+              <View style={styles.employeeActions}>
+                <Pressable style={styles.editBtn} onPress={() => { setEditingAdmin(admin); setAdminName(admin.name); setShowAdminNameModal(true); }} accessibilityLabel={`Rename ${admin.name}`}><Pencil size={18} color="white" /></Pressable>
+                <Pressable style={styles.deleteBtn} onPress={() => removeAdmin(admin)} accessibilityLabel={`Remove ${admin.name}`}><Trash2 size={18} color="white" /></Pressable>
+              </View>
+            </View>
+          ))}
         </View>
       </ScrollView>
 
@@ -573,15 +626,6 @@ export default function AdminScreen() {
               keyboardType="decimal-pad"
             />
 
-            <Text style={styles.inputLabel}>4-Digit Code</Text>
-            <TextInput
-              style={styles.textInput}
-              value={editCode}
-              onChangeText={(text) => setEditCode(text.replace(/[^0-9]/g, "").slice(0, 4))}
-              keyboardType="number-pad"
-              maxLength={4}
-            />
-
             <View style={styles.modalButtons}>
               <Pressable
                 style={({ pressed }) => [styles.modalBtn, styles.cancelBtn, pressed && styles.btnPressed]}
@@ -644,44 +688,38 @@ export default function AdminScreen() {
         </Pressable>
       </Modal>
 
-      {/* Change Admin PIN Modal */}
+      <FaceEnrollmentModal
+        employee={faceEmployee}
+        onClose={() => setFaceEmployee(null)}
+        onEnrolled={handleFaceEnrolled}
+      />
+
+      <AdminFaceEnrollmentModal admin={adminEnrollment} onClose={() => setAdminEnrollment(null)} onEnrolled={handleAdminFaceEnrolled} />
+
       <Modal
-        visible={showChangePinModal}
+        visible={showAdminNameModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowChangePinModal(false)}
+        onRequestClose={() => setShowAdminNameModal(false)}
       >
         <Pressable
           style={styles.modalContainer}
           onPress={() => {
-            setShowChangePinModal(false);
-            setNewAdminPin("");
-            setConfirmAdminPin("");
+            setShowAdminNameModal(false);
+            setAdminName("");
+            setEditingAdmin(null);
           }}
         >
           <Pressable style={styles.modalContent} onPress={() => {}}>
             <View style={styles.modalHandle} />
-            <Text style={styles.modalTitle}>Change Admin PIN</Text>
+            <Text style={styles.modalTitle}>{editingAdmin ? "Rename Admin" : "Add Admin"}</Text>
 
-            <Text style={styles.inputLabel}>New PIN</Text>
+            <Text style={styles.inputLabel}>Name</Text>
             <TextInput
               style={styles.textInput}
-              value={newAdminPin}
-              onChangeText={(text) => setNewAdminPin(text.replace(/[^0-9]/g, "").slice(0, 4))}
-              keyboardType="number-pad"
-              maxLength={4}
-              placeholder="----"
-              placeholderTextColor="#B0A6A0"
-            />
-
-            <Text style={styles.inputLabel}>Confirm New PIN</Text>
-            <TextInput
-              style={styles.textInput}
-              value={confirmAdminPin}
-              onChangeText={(text) => setConfirmAdminPin(text.replace(/[^0-9]/g, "").slice(0, 4))}
-              keyboardType="number-pad"
-              maxLength={4}
-              placeholder="----"
+              value={adminName}
+              onChangeText={setAdminName}
+              placeholder="Administrator name"
               placeholderTextColor="#B0A6A0"
             />
 
@@ -689,19 +727,19 @@ export default function AdminScreen() {
               <Pressable
                 style={({ pressed }) => [styles.modalBtn, styles.cancelBtn, pressed && styles.btnPressed]}
                 onPress={() => {
-                  setShowChangePinModal(false);
-                  setNewAdminPin("");
-                  setConfirmAdminPin("");
+                  setShowAdminNameModal(false);
+                  setAdminName("");
+                  setEditingAdmin(null);
                 }}
               >
                 <Text style={styles.modalBtnText}>Cancel</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [styles.modalBtn, styles.confirmBtn, pressed && styles.confirmBtnPressed]}
-                onPress={handleChangeAdminPin}
+                onPress={saveAdminName}
               >
                 <Text style={[styles.modalBtnText, styles.confirmBtnText]}>
-                  Save
+                  {editingAdmin ? "Save" : "Continue"}
                 </Text>
               </Pressable>
             </View>
@@ -957,6 +995,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  faceBtn: {
+    backgroundColor: "#85898C",
+    width: 38,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  faceRemoveBtn: { backgroundColor: "#C62828" },
+  adminRow: { backgroundColor: "white", borderRadius: 12, padding: 12, marginTop: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  adminName: { color: "#3A2A22", fontSize: 15, fontWeight: "700" },
   editBtn: {
     backgroundColor: "#069B18",
     width: 38,
@@ -1091,22 +1140,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: "center",
   },
-  lockInput: {
-    backgroundColor: "white",
-    borderWidth: 1.5,
-    borderColor: "#EEE3DA",
-    borderRadius: 12,
-    paddingVertical: 14,
-    width: "100%",
-    fontSize: 28,
-    fontWeight: "700",
-    textAlign: "center",
-    letterSpacing: 12,
-    color: "#3A2A22",
-  },
-  lockInputError: {
-    borderColor: "#B85F00",
-    backgroundColor: "#FDECEA",
-    color: "#B85F00",
-  },
+  faceAccessButton: { flexDirection: "row", gap: 10, alignItems: "center", backgroundColor: "#F28C00", borderRadius: 10, paddingHorizontal: 18, paddingVertical: 13 },
+  faceAccessButtonText: { color: "white", fontWeight: "800" },
 });
