@@ -161,15 +161,7 @@ Face recognition uses the tablet camera plus an AWS Rekognition collection throu
 
 Face scanning requires internet access and employee consent. Clocking and Payroll access are unavailable when face recognition cannot be reached.
 
-## Known Issues & TODO
-
-- [x] Shift history view per employee
-- [x] Export payroll reports (CSV)
-- [x] Custom TimeBytes app icon, loading logo, and web favicon
-- [ ] iOS testing (developed/tested primarily on Android)
-- [x] Optional one-tablet database backup/cloud sync
-
 ## License
 
-See LICENSE file
+MIT
 
