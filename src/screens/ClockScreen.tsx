@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   ScrollView,
   RefreshControl,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
@@ -124,8 +125,14 @@ export default function ClockScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#F28C00" />
         }
       >
+        <Image
+          source={require("../../assets/biryani-bytes-logo.jpeg")}
+          style={styles.restaurantLogo}
+          resizeMode="contain"
+          accessibilityLabel="Biryani Bytes logo"
+        />
+
         <View style={styles.header}>
-          <Text style={styles.title}>TimeBytes</Text>
           <Text style={styles.subtitle}>Tap your name to clock in or out</Text>
         </View>
 
@@ -211,19 +218,19 @@ const styles = StyleSheet.create({
     marginBottom: 28,
     marginTop: 12,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "800",
-    textAlign: "center",
-    color: "#B85F00",
-    letterSpacing: -0.5,
-  },
   subtitle: {
     fontSize: 15,
     textAlign: "center",
     marginTop: 6,
     color: "#8A7A70",
     fontWeight: "500",
+  },
+  restaurantLogo: {
+    width: 220,
+    height: 150,
+    alignSelf: "center",
+    marginBottom: 18,
+    opacity: 0.75,
   },
   faceButton: {
     backgroundColor: "#069B18",
