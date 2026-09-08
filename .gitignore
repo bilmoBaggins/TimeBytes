@@ -39,6 +39,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# dashboard local Supabase config (see dashboard/config.example.js)
+dashboard/config.js
+
 # typescript
 *.tsbuildinfo
 

@@ -262,14 +262,15 @@
   </main>
 </div>
 
+<script src="config.js"></script>
 <script type="module">
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
 // ── Config ────────────────────────────────────────────────────────────────
-// Option A: paste your values here (same as the app's .env).
-const SUPABASE_URL = "";
-const SUPABASE_ANON_KEY = "";
-// Option B: leave blank and the dashboard will ask once, then remember them.
+// Values come from gitignored config.js (window.TIMEBYTES_*). If it's missing
+// or blank, the dashboard asks once and remembers them in this browser.
+const SUPABASE_URL = window.TIMEBYTES_SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = window.TIMEBYTES_SUPABASE_ANON_KEY || "";
 
 const $ = (id) => document.getElementById(id);
 const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
