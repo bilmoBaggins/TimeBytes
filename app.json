@@ -21,6 +21,13 @@
     "web": {
       "favicon": "./assets/timebytes-app-icon.png"
     },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f912ab9f-667e-4640-a7c0-df1921b1856b",
+      "fallbackToCacheTimeout": 3000
+    },
     "plugins": [
       [
         "expo-camera",

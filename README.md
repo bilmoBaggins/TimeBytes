@@ -135,6 +135,18 @@ eas build --platform android --profile preview
 
 This builds an installable `.apk` in the cloud (no local Android SDK needed). Transfer it to the tablet and install it directly — no dev server or same-network requirement. The tablet needs internet access for face enrollment, recognition, and face removal.
 
+### Remote updates (no reinstall)
+
+The APK is configured with EAS Update, so JavaScript/asset changes can be pushed over the air without building a new APK:
+
+```bash
+eas update --channel preview --message "describe the change"
+```
+
+The tablet picks up the update next time the app launches (a full restart after the first launch applies it). Bump `version` in `app.json` whenever you want a clean rollout marker — the update's runtime version follows it automatically.
+
+**Important:** `.env` is read at `eas update` time, not at build time, so make sure `EXPO_PUBLIC_SUPABASE_EMAIL`/`PASSWORD` are set before publishing. Changes to native code (new Expo SDK packages, permissions, plugins) still require a fresh `eas build`.
+
 Alternatively, with Android Studio installed locally:
 ```bash
 npx expo prebuild
