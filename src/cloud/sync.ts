@@ -6,8 +6,33 @@ let syncInProgress = false;
 export async function initializeCloudSync(): Promise<void> {
   if (!cloudSyncConfigured || !supabase) return;
 
+  const ownerEmail = process.env.EXPO_PUBLIC_SUPABASE_EMAIL;
+  const ownerPassword = process.env.EXPO_PUBLIC_SUPABASE_PASSWORD;
+
   const { data } = await supabase.auth.getSession();
-  if (!data.session) {
+  const session = data.session;
+
+  if (ownerEmail && ownerPassword) {
+    // Data must live under the shared owner account so the web dashboard can
+    // read it. Drop a stale anonymous session from before the account was set.
+    if (session && !session.user.is_anonymous) return;
+    if (session) {
+      await supabase.auth.signOut({ scope: "local" });
+    }
+    const { error } = await supabase.auth.signInWithPassword({
+      email: ownerEmail,
+      password: ownerPassword,
+    });
+    if (error) {
+      console.warn(
+        "Cloud sync sign-in failed. Create this user in Supabase Dashboard > Authentication > Users:",
+        error.message
+      );
+    }
+    return;
+  }
+
+  if (!session) {
     await supabase.auth.signInAnonymously();
   }
 }

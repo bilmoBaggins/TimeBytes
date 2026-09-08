@@ -29,6 +29,7 @@ A tablet/mobile app for TimeBytes employees to clock in/out with face recognitio
 - **Tap-outside-to-close pop-ups** — Forms and history pop-ups close when tapping outside the card.
 - **Local Database** — SQLite stores employees, shifts, and administrator faces on the tablet.
 - **Cloud Backup** — Supabase keeps a one-tablet backup of employee, shift, and administrator records.
+- **Live Web Dashboard** — Admins can watch clock status, month-to-date hours, and pay live from any laptop or phone browser (see below).
 
 ## Project Structure
 
@@ -98,6 +99,28 @@ Windows Firewall blocks inbound connections on the Metro bundler's port by defau
 ```powershell
 New-NetFirewallRule -DisplayName "Expo 8081" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8081
 ```
+
+## Live Web Dashboard
+
+A standalone dashboard (`dashboard/index.html`, no build step) shows every employee's name, live clocked in/out status, total hours worked in the current month, and their hourly rate — updating in real time as employees clock in/out on the tablet.
+
+### One-time setup
+
+1. **Create the owner account** — Supabase Dashboard > Authentication > Users > **Add user** (with "Auto Confirm User" ticked). Use any email + a strong password.
+2. **Point the tablet at that account** — add to your `.env`:
+   ```bash
+   EXPO_PUBLIC_SUPABASE_EMAIL=admin@example.com
+   EXPO_PUBLIC_SUPABASE_PASSWORD=your_password
+   ```
+   The tablet swaps from anonymous sign-in to this account on next launch and re-syncs all data under it. The dashboard and tablet must use the *same* account, because Row Level Security scopes all rows to that user.
+3. **Enable realtime** — run [supabase/migrations/20260908000000_enable_dashboard_realtime.sql](supabase/migrations/20260908000000_enable_dashboard_realtime.sql) in the Supabase SQL Editor. (Without it the dashboard still works, refreshing every 30 seconds.)
+
+### Run it
+
+- **On your network:** `npm run dashboard`, then open the printed URL on any laptop or phone on the same Wi-Fi.
+- **From anywhere:** host the `dashboard/` folder on any static host (Netlify/Vercel/GitHub Pages — drag-and-drop is enough).
+
+On first visit, paste your Supabase URL and anon key (or edit them into the top of `dashboard/index.html`), then sign in with the owner account.
 
 ## Deploying to a Tablet (Standalone, No Dev Server)
 

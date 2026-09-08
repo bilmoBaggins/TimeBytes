@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TimeBytes — Live Admin Dashboard</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --card-border: #334155;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --accent: #38bdf8;
+    --in: #22c55e;
+    --out: #64748b;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .hidden { display: none !important; }
+
+  /* ---------- Auth / setup screens ---------- */
+  .center-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .auth-card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 32px;
+    width: 100%;
+    max-width: 400px;
+  }
+  .auth-card h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  .auth-card p { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+  label { display: block; font-size: 0.8rem; color: var(--muted); margin: 12px 0 4px; }
+  input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--card-border);
+    background: #0b1220;
+    color: var(--text);
+    font-size: 1rem;
+  }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  button {
+    width: 100%;
+    margin-top: 20px;
+    padding: 13px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #082f49;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  button:active { transform: scale(0.98); }
+  .error-text { color: var(--danger); font-size: 0.85rem; margin-top: 12px; min-height: 1.2em; }
+
+  /* ---------- Dashboard ---------- */
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--card-border);
+    position: sticky;
+    top: 0;
+    background: var(--bg);
+    z-index: 10;
+  }
+  header h1 { font-size: 1.15rem; flex: 1; min-width: 160px; }
+  .live-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    border: 1px solid var(--card-border);
+    padding: 6px 12px;
+    border-radius: 999px;
+  }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--out); }
+  .live-pill.live .live-dot { background: var(--in); box-shadow: 0 0 8px var(--in); }
+  .icon-btn {
+    width: auto;
+    margin: 0;
+    padding: 7px 14px;
+    font-size: 0.82rem;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--card-border);
+  }
+  .icon-btn:hover { color: var(--text); }
+
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px 18px;
+  }
+  .stat .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .value { font-size: 1.55rem; font-weight: 700; margin-top: 6px; }
+
+  .month-nav {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .month-nav h2 { font-size: 1.05rem; flex: 1; text-align: center; }
+  .month-nav button {
+    width: auto;
+    margin: 0;
+    padding: 8px 16px;
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--card-border);
+    font-weight: 600;
+  }
+  .month-nav button:disabled { opacity: 0.35; cursor: default; }
+
+  table { width: 100%; border-collapse: collapse; }
+  .table-wrap {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  th, td { padding: 14px 16px; text-align: left; }
+  th {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    border-bottom: 1px solid var(--card-border);
+  }
+  td { border-bottom: 1px solid rgba(51, 65, 85, 0.5); font-size: 0.95rem; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; }
+  .emp-name { font-weight: 600; }
+  .badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .badge.in { background: rgba(34, 197, 94, 0.15); color: var(--in); }
+  .badge.out { background: rgba(100, 116, 139, 0.2); color: #cbd5e1; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+  .footer-note { color: var(--muted); font-size: 0.75rem; text-align: center; margin-top: 18px; }
+
+  /* Phone: turn table rows into stacked cards */
+  @media (max-width: 640px) {
+    table, thead, tbody, tr, td { display: block; }
+    thead { display: none; }
+    tr { border-bottom: 1px solid var(--card-border); padding: 10px 4px; }
+    tr:last-child { border-bottom: none; }
+    td { border: none; padding: 6px 16px; }
+    td.num { text-align: left; }
+    td::before {
+      content: attr(data-label);
+      display: block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 2px;
+    }
+    td.no-label::before { content: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Setup screen: shown when Supabase URL/key are not configured -->
+<div id="setup-screen" class="center-screen hidden">
+  <div class="auth-card">
+    <h1>Dashboard setup</h1>
+    <p>Enter your Supabase project details (the same values as the tablet app's <code>.env</code>).</p>
+    <label for="setup-url">Supabase URL</label>
+    <input id="setup-url" placeholder="https://your-project-ref.supabase.co" autocomplete="off" />
+    <label for="setup-key">Anon / publishable key</label>
+    <input id="setup-key" placeholder="eyJhbGciOi..." autocomplete="off" />
+    <button id="setup-save">Save &amp; continue</button>
+    <div id="setup-error" class="error-text"></div>
+  </div>
+</div>
+
+<!-- Login screen -->
+<div id="login-screen" class="center-screen hidden">
+  <div class="auth-card">
+    <h1>TimeBytes Dashboard</h1>
+    <p>Sign in with the owner account used by the clock-in tablet.</p>
+    <label for="login-email">Email</label>
+    <input id="login-email" type="email" placeholder="admin@biryani-bytes.co.uk" autocomplete="username" />
+    <label for="login-password">Password</label>
+    <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+    <button id="login-btn">Sign in</button>
+    <div id="login-error" class="error-text"></div>
+  </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="hidden">
+  <header>
+    <h1>🍛 TimeBytes Live Dashboard</h1>
+    <span id="live-pill" class="live-pill"><span class="live-dot"></span><span id="live-text">Connecting…</span></span>
+    <button id="signout-btn" class="icon-btn">Sign out</button>
+  </header>
+  <main>
+    <div class="summary">
+      <div class="stat"><div class="label">Clocked in now</div><div class="value" id="stat-in">–</div></div>
+      <div class="stat"><div class="label">Hours this month</div><div class="value" id="stat-hours">–</div></div>
+      <div class="stat"><div class="label">Pay this month</div><div class="value" id="stat-pay">–</div></div>
+    </div>
+
+    <div class="month-nav">
+      <button id="prev-month">‹ Prev</button>
+      <h2 id="month-label"></h2>
+      <button id="next-month">Next ›</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Employee</th>
+            <th>Status</th>
+            <th class="num">Hours (month)</th>
+            <th class="num">Pay / hour</th>
+            <th class="num">Pay (month)</th>
+          </tr>
+        </thead>
+        <tbody id="employee-rows"></tbody>
+      </table>
+      <div id="empty-state" class="empty hidden">No employees found. Add employees on the tablet first.</div>
+    </div>
+    <p class="footer-note">Updates live as employees clock in/out on the tablet. Times use this device's timezone.</p>
+  </main>
+</div>
+
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+// ── Config ────────────────────────────────────────────────────────────────
+// Option A: paste your values here (same as the app's .env).
+const SUPABASE_URL = "";
+const SUPABASE_ANON_KEY = "";
+// Option B: leave blank and the dashboard will ask once, then remember them.
+
+const $ = (id) => document.getElementById(id);
+const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
+
+let supabase = null;
+let monthOffset = 0;          // 0 = current month, -1 = previous, …
+let employees = [];           // device_employees rows
+let shifts = [];              // device_shifts rows for the selected month
+let realtimeChannel = null;
+
+// ── Boot ──────────────────────────────────────────────────────────────────
+const savedUrl = SUPABASE_URL || localStorage.getItem("tb_supabase_url") || "";
+const savedKey = SUPABASE_ANON_KEY || localStorage.getItem("tb_supabase_key") || "";
+
+if (!savedUrl || !savedKey) {
+  showScreen("setup-screen");
+} else {
+  init(savedUrl, savedKey);
+}
+
+$("setup-save").addEventListener("click", () => {
+  const url = $("setup-url").value.trim();
+  const key = $("setup-key").value.trim();
+  if (!url.startsWith("http") || !key) {
+    $("setup-error").textContent = "Enter a valid Supabase URL and anon key.";
+    return;
+  }
+  localStorage.setItem("tb_supabase_url", url);
+  localStorage.setItem("tb_supabase_key", key);
+  init(url, key);
+});
+
+async function init(url, key) {
+  supabase = createClient(url, key);
+  const { data } = await supabase.auth.getSession();
+  if (data.session) {
+    enterDashboard();
+  } else {
+    showScreen("login-screen");
+  }
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────
+$("login-btn").addEventListener("click", async () => {
+  $("login-error").textContent = "";
+  const { error } = await supabase.auth.signInWithPassword({
+    email: $("login-email").value.trim(),
+    password: $("login-password").value,
+  });
+  if (error) {
+    $("login-error").textContent = error.message;
+  } else {
+    enterDashboard();
+  }
+});
+$("login-password").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("login-btn").click();
+});
+
+$("signout-btn").addEventListener("click", async () => {
+  await supabase.auth.signOut();
+  location.reload();
+});
+
+// ── Dashboard ─────────────────────────────────────────────────────────────
+function showScreen(id) {
+  for (const s of ["setup-screen", "login-screen", "dashboard"]) {
+    $(s).classList.toggle("hidden", s !== id);
+  }
+}
+
+function enterDashboard() {
+  showScreen("dashboard");
+  void loadData();
+  subscribeRealtime();
+  // Fallback refresh in case realtime isn't enabled yet, plus a render tick
+  // so elapsed time for clocked-in employees keeps counting up.
+  setInterval(() => void loadData(), 30000);
+  setInterval(render, 15000);
+}
+
+function monthInfo(offset) {
+  const base = new Date();
+  const first = new Date(base.getFullYear(), base.getMonth() + offset, 1);
+  const next = new Date(base.getFullYear(), base.getMonth() + offset + 1, 1);
+  const iso = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return {
+    start: iso(first),
+    end: iso(next),
+    label: first.toLocaleString("en-GB", { month: "long", year: "numeric" }),
+  };
+}
+
+async function loadData() {
+  const { start, end, label } = monthInfo(monthOffset);
+  $("month-label").textContent = label;
+  $("next-month").disabled = monthOffset >= 0;
+
+  const [empRes, shiftRes] = await Promise.all([
+    supabase.from("device_employees").select("local_id, name, hourly_rate, is_clocked_in").order("name"),
+    supabase.from("device_shifts")
+      .select("local_id, employee_id, date, clock_in_time, clock_out_time, hourly_pay")
+      .gte("date", start)
+      .lt("date", end),
+  ]);
+
+  if (empRes.error || shiftRes.error) {
+    setLiveStatus(false, "Connection error");
+    console.error(empRes.error || shiftRes.error);
+    return;
+  }
+  employees = empRes.data ?? [];
+  shifts = shiftRes.data ?? [];
+  render();
+}
+
+function subscribeRealtime() {
+  if (realtimeChannel) supabase.removeChannel(realtimeChannel);
+  let refreshTimer = null;
+  const scheduleRefresh = () => {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => void loadData(), 400);
+  };
+  realtimeChannel = supabase
+    .channel("dashboard-live")
+    .on("postgres_changes", { event: "*", schema: "public", table: "device_employees" }, scheduleRefresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "device_shifts" }, scheduleRefresh)
+    .subscribe((status) => {
+      setLiveStatus(status === "SUBSCRIBED", status === "SUBSCRIBED" ? "Live" : "Polling (30 s)");
+    });
+}
+
+function setLiveStatus(live, text) {
+  $("live-pill").classList.toggle("live", live);
+  $("live-text").textContent = text;
+}
+
+// ── Calculations (mirror the app's shift logic) ───────────────────────────
+function minutesBetween(inTime, outTime) {
+  const [ih, im] = inTime.split(":").map(Number);
+  const [oh, om] = outTime.split(":").map(Number);
+  let diff = oh * 60 + om - (ih * 60 + im);
+  if (diff < 0) diff += 24 * 60; // overnight shift
+  return diff;
+}
+
+function openShiftHours(shift) {
+  const startMs = new Date(`${shift.date}T${shift.clock_in_time}:00`).getTime();
+  return Math.max(0, Date.now() - startMs) / 3_600_000;
+}
+
+// ── Rendering ─────────────────────────────────────────────────────────────
+function render() {
+  const todayIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const currentMonth = monthInfo(0).start.slice(0, 7);
+  const viewingMonth = monthInfo(monthOffset).start.slice(0, 7);
+
+  let totalIn = 0, totalHours = 0, totalPay = 0;
+  const rows = employees.map((emp) => {
+    const empShifts = shifts.filter((s) => s.employee_id === emp.local_id);
+    let hours = 0, pay = 0;
+    for (const s of empShifts) {
+      if (s.clock_out_time) {
+        hours += minutesBetween(s.clock_in_time, s.clock_out_time) / 60;
+        pay += s.hourly_pay ?? 0;
+      } else {
+        const h = openShiftHours(s);
+        hours += h;
+        pay += h * emp.hourly_rate;
+      }
+    }
+    if (emp.is_clocked_in) totalIn++;
+    totalHours += hours;
+    totalPay += pay;
+    return { emp, hours, pay };
+  });
+
+  // Summary cards always reflect the current month / right now.
+  if (viewingMonth === currentMonth) {
+    $("stat-in").textContent = totalIn;
+    $("stat-hours").textContent = totalHours.toFixed(1);
+    $("stat-pay").textContent = gbp.format(totalPay);
+  } else {
+    $("stat-in").textContent = employees.filter((e) => e.is_clocked_in).length;
+    $("stat-hours").textContent = totalHours.toFixed(1);
+    $("stat-pay").textContent = gbp.format(totalPay);
+  }
+
+  $("empty-state").classList.toggle("hidden", rows.length > 0);
+  $("employee-rows").innerHTML = rows.map(({ emp, hours, pay }) => `
+    <tr>
+      <td class="emp-name no-label" data-label="">${escapeHtml(emp.name)}</td>
+      <td data-label="Status">
+        <span class="badge ${emp.is_clocked_in ? "in" : "out"}">
+          ${emp.is_clocked_in ? "● Clocked in" : "Clocked out"}
+        </span>
+      </td>
+      <td class="num" data-label="Hours (month)">${hours.toFixed(2)} h</td>
+      <td class="num" data-label="Pay / hour">${gbp.format(emp.hourly_rate)}</td>
+      <td class="num" data-label="Pay (month)">${gbp.format(pay)}</td>
+    </tr>
+  `).join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+$("prev-month").addEventListener("click", () => { monthOffset--; void loadData(); });
+$("next-month").addEventListener("click", () => { if (monthOffset < 0) { monthOffset++; void loadData(); } });
+</script>
+</body>
+</html>
