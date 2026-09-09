@@ -100,7 +100,8 @@ export async function syncLocalDatabase(): Promise<void> {
 }
 
 export function requestBackgroundSync(): void {
-  void syncLocalDatabase().catch(() => {
-    // Offline operation is expected; the next app refresh retries the backup.
+  void syncLocalDatabase().catch((error) => {
+    // Offline operation is expected, but log so a stuck sync is diagnosable.
+    console.warn("Background cloud sync failed; will retry on next sync:", error);
   });
 }

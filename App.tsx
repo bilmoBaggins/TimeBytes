@@ -36,7 +36,17 @@ export default function App() {
 
     setupApp();
 
+    // Tablets stay open for a whole shift; periodically re-push so a clock-in
+    // that missed its one-shot background sync (e.g. brief network drop)
+    // still reaches the dashboard without requiring another action.
+    const resyncInterval = setInterval(() => {
+      syncLocalDatabase().catch((error) => {
+        console.warn("Periodic cloud sync failed; will retry:", error);
+      });
+    }, 60000);
+
     return () => {
+      clearInterval(resyncInterval);
       closeDatabase();
     };
   }, []);
