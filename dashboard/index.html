@@ -140,6 +140,7 @@
     font-weight: 600;
   }
   .month-nav button:disabled { opacity: 0.35; cursor: default; }
+  #export-csv { width: auto; margin: 0; padding: 8px 16px; background: var(--card); color: var(--text); border: 1px solid var(--card-border); font-weight: 600; }
 
   table { width: 100%; border-collapse: collapse; }
   .table-wrap {
@@ -257,6 +258,7 @@
       <button id="prev-month">‹ Prev</button>
       <h2 id="month-label"></h2>
       <button id="next-month">Next ›</button>
+      <button id="export-csv">⬇ Export CSV</button>
     </div>
 
     <div class="table-wrap">
@@ -551,8 +553,47 @@ function escapeHtml(s) {
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// ── CSV export ────────────────────────────────────────────────────────────
+function csvCell(value) {
+  const s = String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv() {
+  const { label } = monthInfo(monthOffset);
+  const header = ["Employee", "Date", "Clock in", "Clock out", "Pay"];
+  const rows = [header];
+
+  for (const emp of employees) {
+    const empShifts = shifts
+      .filter((s) => s.employee_id === emp.local_id)
+      .slice()
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+    for (const s of empShifts) {
+      const [y, m, d] = s.date.split("-");
+      const outTime = s.clock_out_time ? s.clock_out_time.slice(0, 5) : "";
+      const pay = s.clock_out_time ? (s.hourly_pay ?? 0) : openShiftHours(s) * emp.hourly_rate;
+      rows.push([emp.name, `${d}/${m}/${y}`, s.clock_in_time.slice(0, 5), outTime, pay.toFixed(2)]);
+    }
+  }
+
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `timebytes-shifts-${label.replace(" ", "-")}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 $("prev-month").addEventListener("click", () => { monthOffset--; void loadData(); });
 $("next-month").addEventListener("click", () => { if (monthOffset < 0) { monthOffset++; void loadData(); } });
+$("export-csv").addEventListener("click", exportCsv);
 </script>
 </body>
 </html>
+
