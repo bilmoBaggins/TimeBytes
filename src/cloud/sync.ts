@@ -2,6 +2,41 @@ import { getDatabase } from "../database/database";
 import { cloudSyncConfigured, supabase } from "./supabase";
 
 let syncInProgress = false;
+type SyncedTable = "device_employees" | "device_shifts" | "device_admin_faces";
+
+async function syncRows(
+  table: SyncedTable,
+  userId: string,
+  rows: Array<{ local_id: number }>
+): Promise<void> {
+  if (!supabase) return;
+
+  const { data: remoteRows, error: fetchError } = await supabase
+    .from(table)
+    .select("local_id")
+    .eq("user_id", userId);
+  if (fetchError) throw fetchError;
+
+  if (rows.length) {
+    const { error: upsertError } = await supabase
+      .from(table)
+      .upsert(rows, { onConflict: "user_id,local_id" });
+    if (upsertError) throw upsertError;
+  }
+
+  const localIds = new Set(rows.map((row) => row.local_id));
+  const staleIds = (remoteRows ?? [])
+    .map((row) => row.local_id)
+    .filter((localId) => !localIds.has(localId));
+  if (!staleIds.length) return;
+
+  const { error: deleteError } = await supabase
+    .from(table)
+    .delete()
+    .eq("user_id", userId)
+    .in("local_id", staleIds);
+  if (deleteError) throw deleteError;
+}
 
 export async function initializeCloudSync(): Promise<void> {
   if (!cloudSyncConfigured || !supabase) return;
@@ -82,18 +117,9 @@ export async function syncLocalDatabase(): Promise<void> {
       face_id: adminFace.faceId,
     }));
 
-    if (employeeRows.length) {
-      const { error } = await supabase.from("device_employees").upsert(employeeRows);
-      if (error) throw error;
-    }
-    if (shiftRows.length) {
-      const { error } = await supabase.from("device_shifts").upsert(shiftRows);
-      if (error) throw error;
-    }
-    if (adminFaceRows.length) {
-      const { error } = await supabase.from("device_admin_faces").upsert(adminFaceRows);
-      if (error) throw error;
-    }
+    await syncRows("device_employees", userId, employeeRows);
+    await syncRows("device_shifts", userId, shiftRows);
+    await syncRows("device_admin_faces", userId, adminFaceRows);
   } finally {
     syncInProgress = false;
   }

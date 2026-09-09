@@ -170,6 +170,20 @@
   .badge.in { background: rgba(34, 197, 94, 0.15); color: var(--in); }
   .badge.out { background: rgba(100, 116, 139, 0.2); color: #cbd5e1; }
   .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+
+  tr.emp-row { cursor: pointer; }
+  tr.emp-row:hover td { background: rgba(148, 163, 184, 0.06); }
+  .expand-icon { display: inline-block; margin-right: 8px; color: var(--muted); transition: transform 0.15s ease; }
+  tr.emp-row.expanded .expand-icon { transform: rotate(90deg); }
+  tr.detail-row td { padding: 0; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+  tr.detail-row.hidden { display: none; }
+  .detail-wrap { padding: 8px 16px 16px 40px; }
+  .detail-day { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 0.88rem; border-bottom: 1px dashed rgba(51, 65, 85, 0.5); }
+  .detail-day:last-child { border-bottom: none; }
+  .detail-day .detail-date { color: var(--muted); min-width: 96px; }
+  .detail-day .detail-times { flex: 1; }
+  .detail-day .detail-pay { font-weight: 600; }
+  .detail-empty { color: var(--muted); font-size: 0.85rem; padding: 6px 0; }
   .footer-note { color: var(--muted); font-size: 0.75rem; text-align: center; margin-top: 18px; }
 
   /* Phone: turn table rows into stacked cards */
@@ -180,6 +194,8 @@
     tr:last-child { border-bottom: none; }
     td { border: none; padding: 6px 16px; }
     td.num { text-align: left; }
+    tr.detail-row { padding: 0; }
+    .detail-wrap { padding: 8px 4px 12px 16px; }
     td::before {
       content: attr(data-label);
       display: block;
@@ -280,6 +296,7 @@ let monthOffset = 0;          // 0 = current month, -1 = previous, …
 let employees = [];           // device_employees rows
 let shifts = [];              // device_shifts rows for the selected month
 let realtimeChannel = null;
+const expandedEmployees = new Set(); // local_ids with an open day-by-day breakdown
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 const savedUrl = SUPABASE_URL || localStorage.getItem("tb_supabase_url") || "";
@@ -464,9 +481,11 @@ function render() {
   }
 
   $("empty-state").classList.toggle("hidden", rows.length > 0);
-  $("employee-rows").innerHTML = rows.map(({ emp, hours, pay }) => `
-    <tr>
-      <td class="emp-name no-label" data-label="">${escapeHtml(emp.name)}</td>
+  $("employee-rows").innerHTML = rows.map(({ emp, hours, pay }) => {
+    const isExpanded = expandedEmployees.has(emp.local_id);
+    return `
+    <tr class="emp-row${isExpanded ? " expanded" : ""}" data-emp="${emp.local_id}">
+      <td class="emp-name no-label" data-label=""><span class="expand-icon">▶</span>${escapeHtml(emp.name)}</td>
       <td data-label="Status">
         <span class="badge ${emp.is_clocked_in ? "in" : "out"}">
           ${emp.is_clocked_in ? "● Clocked in" : "Clocked out"}
@@ -476,7 +495,55 @@ function render() {
       <td class="num" data-label="Pay / hour">${gbp.format(emp.hourly_rate)}</td>
       <td class="num" data-label="Pay (month)">${gbp.format(pay)}</td>
     </tr>
-  `).join("");
+    <tr class="detail-row${isExpanded ? "" : " hidden"}" data-emp-detail="${emp.local_id}">
+      <td colspan="5">
+        <div class="detail-wrap">${renderDayBreakdown(emp)}</div>
+      </td>
+    </tr>
+  `;
+  }).join("");
+
+  for (const row of $("employee-rows").querySelectorAll("tr.emp-row")) {
+    row.addEventListener("click", () => toggleEmployeeDetail(Number(row.dataset.emp)));
+  }
+}
+
+function renderDayBreakdown(emp) {
+  const empShifts = shifts
+    .filter((s) => s.employee_id === emp.local_id)
+    .slice()
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  if (empShifts.length === 0) {
+    return `<div class="detail-empty">No shifts this month.</div>`;
+  }
+
+  return empShifts.map((s) => {
+    const [y, m, d] = s.date.split("-");
+    const dateLabel = `${d}/${m}/${y}`;
+    const outTime = s.clock_out_time
+      ? s.clock_out_time.slice(0, 5)
+      : "…";
+    const pay = s.clock_out_time
+      ? (s.hourly_pay ?? 0)
+      : openShiftHours(s) * emp.hourly_rate;
+    return `
+      <div class="detail-day">
+        <span class="detail-date">${dateLabel}</span>
+        <span class="detail-times">${s.clock_in_time.slice(0, 5)} - ${outTime}</span>
+        <span class="detail-pay">${gbp.format(pay)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+function toggleEmployeeDetail(localId) {
+  if (expandedEmployees.has(localId)) {
+    expandedEmployees.delete(localId);
+  } else {
+    expandedEmployees.add(localId);
+  }
+  render();
 }
 
 function escapeHtml(s) {
