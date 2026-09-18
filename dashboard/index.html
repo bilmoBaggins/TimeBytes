@@ -54,6 +54,26 @@
     font-size: 1rem;
   }
   input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .password-field { position: relative; }
+  .password-field input { padding-right: 46px; }
+  .password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    transform: translateY(-50%);
+    width: auto;
+    margin: 0;
+    padding: 6px;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .password-toggle:hover { color: var(--text); }
+  .password-toggle:active { transform: translateY(-50%) scale(0.94); }
   button {
     width: 100%;
     margin-top: 20px;
@@ -179,11 +199,15 @@
   tr.detail-row td { padding: 0; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
   tr.detail-row.hidden { display: none; }
   .detail-wrap { padding: 8px 16px 16px 40px; }
-  .detail-day { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; font-size: 0.88rem; border-bottom: 1px dashed rgba(51, 65, 85, 0.5); }
-  .detail-day:last-child { border-bottom: none; }
+  .detail-daygroup { padding: 8px 0; border-bottom: 1px dashed rgba(51, 65, 85, 0.5); }
+  .detail-daygroup:last-child { border-bottom: none; }
+  .detail-day { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.88rem; }
   .detail-day .detail-date { color: var(--muted); min-width: 96px; }
   .detail-day .detail-times { flex: 1; }
   .detail-day .detail-pay { font-weight: 600; }
+  .detail-subtotal { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0 0; font-size: 0.82rem; color: var(--accent); }
+  .detail-subtotal .detail-date { min-width: 96px; }
+  .detail-subtotal .detail-times { flex: 1; font-style: italic; color: var(--muted); }
   .detail-empty { color: var(--muted); font-size: 0.85rem; padding: 6px 0; }
   .footer-note { color: var(--muted); font-size: 0.75rem; text-align: center; margin-top: 18px; }
 
@@ -232,9 +256,17 @@
     <h1>TimeBytes Dashboard</h1>
     <p>Sign in with the owner account used by the clock-in tablet.</p>
     <label for="login-email">Email</label>
-    <input id="login-email" type="email" placeholder="admin@biryani-bytes.co.uk" autocomplete="username" />
+    <input id="login-email" type="email" placeholder="you@example.com" autocomplete="username" />
     <label for="login-password">Password</label>
-    <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+    <div class="password-field">
+      <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
+      <button type="button" id="toggle-password" class="password-toggle" aria-label="Show password" aria-pressed="false">
+        <svg id="eye-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      </button>
+    </div>
     <button id="login-btn">Sign in</button>
     <div id="login-error" class="error-text"></div>
   </div>
@@ -349,6 +381,18 @@ $("login-password").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("login-btn").click();
 });
 
+const EYE_OPEN = `<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>`;
+const EYE_OFF = `<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 4.22-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 8 11 8a18.6 18.6 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line>`;
+
+$("toggle-password").addEventListener("click", () => {
+  const input = $("login-password");
+  const showing = input.type === "text";
+  input.type = showing ? "password" : "text";
+  $("eye-icon").innerHTML = showing ? EYE_OPEN : EYE_OFF;
+  $("toggle-password").setAttribute("aria-label", showing ? "Show password" : "Hide password");
+  $("toggle-password").setAttribute("aria-pressed", String(!showing));
+});
+
 $("signout-btn").addEventListener("click", async () => {
   await supabase.auth.signOut();
   location.reload();
@@ -442,6 +486,18 @@ function openShiftHours(shift) {
   return Math.max(0, Date.now() - startMs) / 3_600_000;
 }
 
+function shiftHours(shift) {
+  return shift.clock_out_time
+    ? minutesBetween(shift.clock_in_time, shift.clock_out_time) / 60
+    : openShiftHours(shift);
+}
+
+function shiftPay(shift, emp) {
+  return shift.clock_out_time
+    ? (shift.hourly_pay ?? 0)
+    : openShiftHours(shift) * emp.hourly_rate;
+}
+
 // ── Rendering ─────────────────────────────────────────────────────────────
 function render() {
   const todayIso = (() => {
@@ -456,14 +512,8 @@ function render() {
     const empShifts = shifts.filter((s) => s.employee_id === emp.local_id);
     let hours = 0, pay = 0;
     for (const s of empShifts) {
-      if (s.clock_out_time) {
-        hours += minutesBetween(s.clock_in_time, s.clock_out_time) / 60;
-        pay += s.hourly_pay ?? 0;
-      } else {
-        const h = openShiftHours(s);
-        hours += h;
-        pay += h * emp.hourly_rate;
-      }
+      hours += shiftHours(s);
+      pay += shiftPay(s, emp);
     }
     if (emp.is_clocked_in) totalIn++;
     totalHours += hours;
@@ -511,31 +561,49 @@ function render() {
 }
 
 function renderDayBreakdown(emp) {
-  const empShifts = shifts
-    .filter((s) => s.employee_id === emp.local_id)
-    .slice()
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const empShifts = shifts.filter((s) => s.employee_id === emp.local_id);
 
   if (empShifts.length === 0) {
     return `<div class="detail-empty">No shifts this month.</div>`;
   }
 
-  return empShifts.map((s) => {
-    const [y, m, d] = s.date.split("-");
+  // Group shifts by date so multiple clock-ins/outs on the same day get a
+  // daily subtotal, then sort the groups newest-first.
+  const byDate = new Map();
+  for (const s of empShifts) {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date).push(s);
+  }
+  const dates = Array.from(byDate.keys()).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+
+  return dates.map((date) => {
+    const dayShifts = byDate.get(date).slice().sort((a, b) => (a.clock_in_time < b.clock_in_time ? -1 : 1));
+    const [y, m, d] = date.split("-");
     const dateLabel = `${d}/${m}/${y}`;
-    const outTime = s.clock_out_time
-      ? s.clock_out_time.slice(0, 5)
-      : "…";
-    const pay = s.clock_out_time
-      ? (s.hourly_pay ?? 0)
-      : openShiftHours(s) * emp.hourly_rate;
-    return `
-      <div class="detail-day">
-        <span class="detail-date">${dateLabel}</span>
-        <span class="detail-times">${s.clock_in_time.slice(0, 5)} - ${outTime}</span>
-        <span class="detail-pay">${gbp.format(pay)}</span>
+
+    const dayLines = dayShifts.map((s) => {
+      const outTime = s.clock_out_time ? s.clock_out_time.slice(0, 5) : "…";
+      const pay = shiftPay(s, emp);
+      return `
+        <div class="detail-day">
+          <span class="detail-date">${dateLabel}</span>
+          <span class="detail-times">${s.clock_in_time.slice(0, 5)} - ${outTime}</span>
+          <span class="detail-pay">${gbp.format(pay)}</span>
+        </div>
+      `;
+    }).join("");
+
+    const dayHours = dayShifts.reduce((sum, s) => sum + shiftHours(s), 0);
+    const dayPay = dayShifts.reduce((sum, s) => sum + shiftPay(s, emp), 0);
+    const subtotal = `
+      <div class="detail-subtotal">
+        <span class="detail-date"></span>
+        <span class="detail-times">${dayShifts.length > 1 ? `Subtotal (${dayShifts.length} shifts)` : "Subtotal"}: ${dayHours.toFixed(2)} h</span>
+        <span class="detail-pay">${gbp.format(dayPay)}</span>
       </div>
     `;
+
+    return `<div class="detail-daygroup">${dayLines}${subtotal}</div>`;
   }).join("");
 }
 
@@ -561,7 +629,7 @@ function csvCell(value) {
 
 function exportCsv() {
   const { label } = monthInfo(monthOffset);
-  const header = ["Employee", "Date", "Clock in", "Clock out", "Pay"];
+  const header = ["Employee", "Date", "Clock in", "Clock out", "Hours", "Pay"];
   const rows = [header];
 
   for (const emp of employees) {
@@ -573,8 +641,9 @@ function exportCsv() {
     for (const s of empShifts) {
       const [y, m, d] = s.date.split("-");
       const outTime = s.clock_out_time ? s.clock_out_time.slice(0, 5) : "";
-      const pay = s.clock_out_time ? (s.hourly_pay ?? 0) : openShiftHours(s) * emp.hourly_rate;
-      rows.push([emp.name, `${d}/${m}/${y}`, s.clock_in_time.slice(0, 5), outTime, pay.toFixed(2)]);
+      const hours = shiftHours(s);
+      const pay = shiftPay(s, emp);
+      rows.push([emp.name, `${d}/${m}/${y}`, s.clock_in_time.slice(0, 5), outTime, hours.toFixed(2), pay.toFixed(2)]);
     }
   }
 
@@ -596,4 +665,3 @@ $("export-csv").addEventListener("click", exportCsv);
 </script>
 </body>
 </html>
-
