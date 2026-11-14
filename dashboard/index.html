@@ -197,19 +197,15 @@
   tr.emp-row:hover td { background: rgba(148, 163, 184, 0.06); }
   .expand-icon { display: inline-block; margin-right: 8px; color: var(--muted); transition: transform 0.15s ease; }
   tr.emp-row.expanded .expand-icon { transform: rotate(90deg); }
-  tr.detail-row td { padding: 0; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+  tr.detail-row td { padding: 8px 16px; font-size: 0.88rem; }
   tr.detail-row.hidden { display: none; }
-  .detail-wrap { padding: 8px 16px 16px 40px; }
-  .detail-daygroup { padding: 8px 0; border-bottom: 1px dashed rgba(51, 65, 85, 0.5); }
-  .detail-daygroup:last-child { border-bottom: none; }
-  .detail-day { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.88rem; }
-  .detail-day .detail-date { color: var(--muted); min-width: 96px; }
-  .detail-day .detail-times { flex: 1; }
-  .detail-day .detail-pay { font-weight: 600; }
-  .detail-subtotal { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0 0; font-size: 0.82rem; color: var(--accent); }
-  .detail-subtotal .detail-date { min-width: 96px; }
-  .detail-subtotal .detail-times { flex: 1; font-style: italic; color: var(--muted); }
-  .detail-empty { color: var(--muted); font-size: 0.85rem; padding: 6px 0; }
+  tr.detail-shift-row.block-end td { border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
+  .detail-shift-info { padding-left: 40px !important; }
+  .detail-day-sep-wrap { display: inline-block; }
+  .detail-day-sep-wrap.day-sep { border-bottom: 1px dashed rgba(51, 65, 85, 0.5); padding-bottom: 4px; }
+  .detail-date { color: var(--muted); margin-right: 14px; }
+  td.detail-pay-cell { font-weight: 600; }
+  .detail-empty { color: var(--muted); font-size: 0.85rem; padding: 12px 16px 12px 40px !important; border-bottom: 1px solid rgba(51, 65, 85, 0.5); }
   .footer-note { color: var(--muted); font-size: 0.75rem; text-align: center; margin-top: 18px; }
 
   /* Phone: turn table rows into stacked cards */
@@ -221,7 +217,9 @@
     td { border: none; padding: 6px 16px; }
     td.num { text-align: left; }
     tr.detail-row { padding: 0; }
-    .detail-wrap { padding: 8px 4px 12px 16px; }
+    .detail-filler { display: none; }
+    .detail-shift-info { padding-left: 20px !important; }
+    .detail-empty { padding-left: 20px !important; }
     td::before {
       content: attr(data-label);
       display: block;
@@ -550,11 +548,7 @@ function render() {
       <td class="num" data-label="Pay / hour">${gbp.format(emp.hourly_rate)}</td>
       <td class="num" data-label="Pay (month)">${gbp.format(pay)}</td>
     </tr>
-    <tr class="detail-row${isExpanded ? "" : " hidden"}" data-emp-detail="${emp.local_id}">
-      <td colspan="5">
-        <div class="detail-wrap">${renderDayBreakdown(emp)}</div>
-      </td>
-    </tr>
+    ${renderDayBreakdown(emp, isExpanded)}
   `;
   }).join("");
 
@@ -563,50 +557,32 @@ function render() {
   }
 }
 
-function renderDayBreakdown(emp) {
+function renderDayBreakdown(emp, isExpanded) {
+  const hiddenClass = isExpanded ? "" : " hidden";
   const empShifts = shifts.filter((s) => s.employee_id === emp.local_id);
-
   if (empShifts.length === 0) {
-    return `<div class="detail-empty">No shifts this month.</div>`;
+    return `<tr class="detail-row${hiddenClass}" data-emp-detail="${emp.local_id}"><td colspan="5" class="detail-empty">No shifts this month.</td></tr>`;
   }
-
-  // Group shifts by date so multiple clock-ins/outs on the same day get a
-  // daily subtotal, then sort the groups newest-first.
   const byDate = new Map();
-  for (const s of empShifts) {
-    if (!byDate.has(s.date)) byDate.set(s.date, []);
-    byDate.get(s.date).push(s);
-  }
+  for (const s of empShifts) { if (!byDate.has(s.date)) byDate.set(s.date, []); byDate.get(s.date).push(s); }
   const dates = Array.from(byDate.keys()).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
-
-  return dates.map((date) => {
+  return dates.map((date, dateIdx) => {
     const dayShifts = byDate.get(date).slice().sort((a, b) => (a.clock_in_time < b.clock_in_time ? -1 : 1));
     const [y, m, d] = date.split("-");
     const dateLabel = `${d}/${m}/${y}`;
-
-    const dayLines = dayShifts.map((s) => {
+    const isLastDate = dateIdx === dates.length - 1;
+    return dayShifts.map((s, shiftIdx) => {
       const outTime = s.clock_out_time ? s.clock_out_time.slice(0, 5) : "…";
-      const pay = shiftPay(s, emp);
-      return `
-        <div class="detail-day">
-          <span class="detail-date">${dateLabel}</span>
-          <span class="detail-times">${s.clock_in_time.slice(0, 5)} - ${outTime}</span>
-          <span class="detail-pay">${gbp.format(pay)}</span>
-        </div>
-      `;
+      const hours = shiftHours(s); const pay = shiftPay(s, emp);
+      const isLastShiftOfDay = shiftIdx === dayShifts.length - 1;
+      const isBlockEnd = isLastDate && isLastShiftOfDay;
+      const daySepClass = isLastShiftOfDay && !isLastDate ? " day-sep" : "";
+      return `<tr class="detail-row detail-shift-row${isBlockEnd ? " block-end" : ""}${hiddenClass}" data-emp-detail="${emp.local_id}">
+        <td colspan="2" class="detail-shift-info no-label${daySepClass}" data-label=""><span class="detail-date">${dateLabel}</span><span class="detail-times">${s.clock_in_time.slice(0, 5)} - ${outTime}</span></td>
+        <td class="num" data-label="Hours">${hours.toFixed(2)} h</td>
+        <td class="num no-label detail-filler" data-label=""></td>
+        <td class="num detail-pay-cell" data-label="Pay">${gbp.format(pay)}</td></tr>`;
     }).join("");
-
-    const dayHours = dayShifts.reduce((sum, s) => sum + shiftHours(s), 0);
-    const dayPay = dayShifts.reduce((sum, s) => sum + shiftPay(s, emp), 0);
-    const subtotal = `
-      <div class="detail-subtotal">
-        <span class="detail-date"></span>
-        <span class="detail-times">${dayShifts.length > 1 ? `Subtotal (${dayShifts.length} shifts)` : "Subtotal"}: ${dayHours.toFixed(2)} h</span>
-        <span class="detail-pay">${gbp.format(dayPay)}</span>
-      </div>
-    `;
-
-    return `<div class="detail-daygroup">${dayLines}${subtotal}</div>`;
   }).join("");
 }
 
