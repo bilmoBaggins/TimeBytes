@@ -127,18 +127,19 @@ On first visit, paste your Supabase URL and anon key (or edit them into the top 
 If a shift started on one day and the employee is still clocked in after 01:00 the next day:
 
 - **Dashboard** — a red warning banner appears at the top (no setup needed; uses the device's timezone).
-- **SMS** — a text is sent to a number you choose, once per shift. This needs a scheduled Supabase Edge Function and a [Twilio](https://www.twilio.com) account:
+- **WhatsApp message** — sent to a number you choose, once per shift, through the free [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/) service. This needs a scheduled Supabase Edge Function. (CallMeBot is unofficial, so it can occasionally break or change.)
 
-1. Run [supabase/migrations/20260910000000_add_shift_alerts.sql](supabase/migrations/20260910000000_add_shift_alerts.sql) in the SQL Editor.
-2. Set the function's secrets (Supabase Dashboard > Edge Functions > Secrets, or `supabase secrets set`). The phone number lives here, not in the repo:
+1. **Activate CallMeBot** for the receiving WhatsApp number: follow the steps on the CallMeBot page above (save their contact, send them the activation message, and they reply with your API key).
+2. Run [supabase/migrations/20260910000000_add_shift_alerts.sql](supabase/migrations/20260910000000_add_shift_alerts.sql) in the SQL Editor.
+3. Set the function's secrets (Supabase Dashboard > Edge Functions > Secrets, or `supabase secrets set`). The phone number and key live here, not in the repo:
    ```
-   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER   (your Twilio number)
-   ALERT_TO_NUMBER      (who gets the text, e.g. +447700900123)
+   ALERT_TO_NUMBER      (the WhatsApp number from step 1, e.g. +447700900123)
+   CALLMEBOT_API_KEY    (the key CallMeBot sent you)
    CRON_SECRET          (any long random string)
    ALERT_TIMEZONE       (optional, default Europe/London)
    ```
-3. Deploy: `supabase functions deploy overnight-clockin-alert`
-4. Schedule it every 15 minutes in the SQL Editor (needs the `pg_cron` and `pg_net` extensions enabled; replace the placeholders):
+4. Deploy: `supabase functions deploy overnight-clockin-alert`
+5. Schedule it every 15 minutes in the SQL Editor (needs the `pg_cron` and `pg_net` extensions enabled; replace the placeholders):
    ```sql
    select cron.schedule('overnight-clockin-alert', '*/15 * * * *', $$
      select net.http_post(

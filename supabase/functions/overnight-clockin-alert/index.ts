@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Texts the owner when an employee's shift started on one day and they are
+// Sends the owner a WhatsApp message when an employee's shift started on one day and they are
 // still clocked in after 01:00 the next day. Run on a schedule (see README).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -30,22 +30,16 @@ function isOverdue(shiftDate: string, now: { date: string; hour: number }) {
   return now.date > due || (now.date === due && now.hour >= CUTOFF_HOUR);
 }
 
-async function sendSms(body: string) {
-  const sid = Deno.env.get("TWILIO_ACCOUNT_SID")!;
-  const token = Deno.env.get("TWILIO_AUTH_TOKEN")!;
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + btoa(`${sid}:${token}`),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      To: Deno.env.get("ALERT_TO_NUMBER")!,
-      From: Deno.env.get("TWILIO_FROM_NUMBER")!,
-      Body: body,
-    }),
+// Sends a WhatsApp message through CallMeBot (https://www.callmebot.com/blog/free-api-whatsapp-messages/).
+async function sendWhatsApp(text: string) {
+  const params = new URLSearchParams({
+    phone: Deno.env.get("ALERT_TO_NUMBER")!, // international format, e.g. +447700900123
+    text,
+    apikey: Deno.env.get("CALLMEBOT_API_KEY")!,
   });
-  if (!res.ok) throw new Error(`Twilio ${res.status}: ${await res.text()}`);
+  const res = await fetch(`https://api.callmebot.com/whatsapp.php?${params}`);
+  const body = await res.text();
+  if (!res.ok || /error/i.test(body)) throw new Error(`CallMeBot ${res.status}: ${body.slice(0, 200)}`);
 }
 
 Deno.serve(async (request) => {
@@ -73,7 +67,7 @@ Deno.serve(async (request) => {
 
     const [y, m, d] = shift.date.split("-");
     try {
-      await sendSms(
+      await sendWhatsApp(
         `TimeBytes: ${shift.employee_name} clocked in on ${d}/${m}/${y} at ${shift.clock_in_time.slice(0, 5)} and is still clocked in past ${String(CUTOFF_HOUR).padStart(2, "0")}:00.`,
       );
       sent.push(shift.employee_name);
