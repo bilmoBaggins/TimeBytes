@@ -122,6 +122,36 @@ A standalone dashboard (`dashboard/index.html`, no build step) shows every emplo
 
 On first visit, paste your Supabase URL and anon key (or edit them into the top of `dashboard/index.html`), then sign in with the owner account.
 
+### Overnight clock-in alert
+
+If a shift started on one day and the employee is still clocked in after 01:00 the next day:
+
+- **Dashboard** — a red warning banner appears at the top (no setup needed; uses the device's timezone).
+- **WhatsApp message** — sent to a number you choose, once per shift, through the free [CallMeBot](https://www.callmebot.com/blog/free-api-whatsapp-messages/) service. This needs a scheduled Supabase Edge Function. (CallMeBot is unofficial, so it can occasionally break or change.)
+
+1. **Activate CallMeBot** for the receiving WhatsApp number: follow the steps on the CallMeBot page above (save their contact, send them the activation message, and they reply with your API key).
+2. Run [supabase/migrations/20260910000000_add_shift_alerts.sql](supabase/migrations/20260910000000_add_shift_alerts.sql) in the SQL Editor.
+3. Set the function's secrets (Supabase Dashboard > Edge Functions > Secrets, or `supabase secrets set`). The phone number and key live here, not in the repo:
+   ```
+   ALERT_TO_NUMBER      (the WhatsApp number from step 1, e.g. +447700900123)
+   CALLMEBOT_API_KEY    (the key CallMeBot sent you)
+   CRON_SECRET          (any long random string)
+   ALERT_TIMEZONE       (optional, default Europe/London)
+   ```
+4. Deploy: `supabase functions deploy overnight-clockin-alert`
+5. Schedule it every 15 minutes in the SQL Editor (needs the `pg_cron` and `pg_net` extensions enabled; replace the placeholders):
+   ```sql
+   select cron.schedule('overnight-clockin-alert', '*/15 * * * *', $$
+     select net.http_post(
+       url := 'https://YOUR-PROJECT-REF.supabase.co/functions/v1/overnight-clockin-alert',
+       headers := jsonb_build_object(
+         'Content-Type', 'application/json',
+         'Authorization', 'Bearer YOUR_ANON_KEY',
+         'x-cron-secret', 'YOUR_CRON_SECRET')
+     );
+   $$);
+   ```
+
 ## Deploying to a Tablet (Standalone, No Dev Server)
 
 Expo Go requires a computer running `npx expo start` on the same Wi-Fi network, which isn't practical for a permanently installed kiosk tablet. For a standalone install:

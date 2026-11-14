@@ -55,3 +55,12 @@ create policy "device owns shifts" on public.device_shifts
 
 create policy "device owns admin faces" on public.device_admin_faces
   for all to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Overnight clock-in SMS alerts already sent (service role only).
+create table if not exists public.shift_alerts (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  shift_local_id integer not null,
+  sent_at timestamptz not null default now(),
+  primary key (user_id, shift_local_id)
+);
+alter table public.shift_alerts enable row level security;
