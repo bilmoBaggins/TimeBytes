@@ -160,6 +160,7 @@
     font-weight: 600;
   }
   .month-nav button:disabled { opacity: 0.35; cursor: default; }
+  #today-btn.hidden { display: none; }
   #export-csv { width: auto; margin: 0; padding: 8px 16px; background: var(--card); color: var(--text); border: 1px solid var(--card-border); font-weight: 600; }
 
   table { width: 100%; border-collapse: collapse; }
@@ -290,6 +291,7 @@
       <button id="prev-month">‹ Prev</button>
       <h2 id="month-label"></h2>
       <button id="next-month">Next ›</button>
+      <button id="today-btn" class="hidden">Today</button>
       <button id="export-csv">⬇ Export CSV</button>
     </div>
 
@@ -432,6 +434,7 @@ async function loadData() {
   const { start, end, label } = monthInfo(monthOffset);
   $("month-label").textContent = label;
   $("next-month").disabled = monthOffset >= 0;
+  $("today-btn").classList.toggle("hidden", monthOffset >= 0);
 
   const [empRes, shiftRes] = await Promise.all([
     supabase.from("device_employees").select("local_id, name, hourly_rate, is_clocked_in").order("name"),
@@ -527,7 +530,7 @@ function render() {
     $("stat-hours").textContent = totalHours.toFixed(1);
     $("stat-pay").textContent = gbp.format(totalPay);
   } else {
-    $("stat-in").textContent = employees.filter((e) => e.is_clocked_in).length;
+    $("stat-in").textContent = "-";
     $("stat-hours").textContent = totalHours.toFixed(1);
     $("stat-pay").textContent = gbp.format(totalPay);
   }
@@ -539,9 +542,9 @@ function render() {
     <tr class="emp-row${isExpanded ? " expanded" : ""}" data-emp="${emp.local_id}">
       <td class="emp-name no-label" data-label=""><span class="expand-icon">▶</span>${escapeHtml(emp.name)}</td>
       <td data-label="Status">
-        <span class="badge ${emp.is_clocked_in ? "in" : "out"}">
+        ${viewingMonth !== currentMonth ? "-" : `<span class="badge ${emp.is_clocked_in ? "in" : "out"}">
           ${emp.is_clocked_in ? "● Clocked in" : "Clocked out"}
-        </span>
+        </span>`}
       </td>
       <td class="num" data-label="Hours (month)">${hours.toFixed(2)} h</td>
       <td class="num" data-label="Pay / hour">${gbp.format(emp.hourly_rate)}</td>
@@ -660,6 +663,7 @@ function exportCsv() {
 }
 
 $("prev-month").addEventListener("click", () => { monthOffset--; void loadData(); });
+$("today-btn").addEventListener("click", () => { monthOffset = 0; void loadData(); });
 $("next-month").addEventListener("click", () => { if (monthOffset < 0) { monthOffset++; void loadData(); } });
 $("export-csv").addEventListener("click", exportCsv);
 </script>
